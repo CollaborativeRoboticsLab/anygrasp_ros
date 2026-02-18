@@ -6,8 +6,6 @@ update loop on demand via a Trigger service.
 
 from __future__ import annotations
 
-import os
-import sys
 import threading
 from types import SimpleNamespace
 from typing import List, Optional, Tuple
@@ -20,7 +18,9 @@ from rclpy.node import Node
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from sensor_msgs.msg import Image
-from std_srvs.srv import Trigger
+from geometry_msgs.msg import Pose
+
+from anygrasp_msgs.srv import GetGrasps
 
 from tracker import AnyGraspTracker  # type: ignore
 
@@ -96,7 +96,7 @@ class AnyGraspTrackingNode(Node):
         )
         self._sync.registerCallback(self._sync_cb)
 
-        self._srv = self.create_service(Trigger, 'tracking', self._on_tracking)
+        self._srv = self.create_service(GetGrasps, 'tracking', self._on_tracking)
 
         self.get_logger().info('AnyGrasp tracking node ready.')
 
@@ -180,8 +180,9 @@ class AnyGraspTrackingNode(Node):
         selected = candidate_ids[: stride * select_count : stride]
         return [int(i) for i in selected]
 
-    def _on_tracking(self, request: Trigger.Request, response: Trigger.Response) -> Trigger.Response:
-        del request
+    def _on_tracking(self, request: GetGrasps.Request, response: GetGrasps.Response) -> GetGrasps.Response:
+        requested_count = int(request.count)
+        target_count = 1 if requested_count <= 0 else requested_count
 
         with self._lock:
             rgb = None if self._latest_rgb is None else self._latest_rgb.copy()
@@ -190,6 +191,7 @@ class AnyGraspTrackingNode(Node):
         if rgb is None or depth is None:
             response.success = False
             response.message = 'No synchronized /rgb_image and /depth_image received yet.'
+            response.poses = []
             return response
 
         try:
@@ -197,6 +199,7 @@ class AnyGraspTrackingNode(Node):
         except Exception as exc:  # noqa: BLE001
             response.success = False
             response.message = f'Failed to build point cloud: {exc}'
+            response.poses = []
             return response
 
         try:
@@ -218,22 +221,35 @@ class AnyGraspTrackingNode(Node):
         except Exception as exc:  # noqa: BLE001
             response.success = False
             response.message = f'AnyGrasp tracking update failed: {exc}'
+            response.poses = []
             return response
 
         if len(target_gg) == 0:
             response.success = False
             response.message = 'Tracking produced no grasps.'
+            response.poses = []
             return response
 
-        translation = np.asarray(target_gg.translations[0]).reshape(3)
-        rotation = np.asarray(target_gg.rotation_matrices[0]).reshape(3, 3)
-        qx, qy, qz, qw = _rotation_matrix_to_quaternion(rotation)
+        count = min(int(len(target_gg)), target_count)
+        poses = []
+        for i in range(count):
+            translation = np.asarray(target_gg.translations[i]).reshape(3)
+            rotation = np.asarray(target_gg.rotation_matrices[i]).reshape(3, 3)
+            qx, qy, qz, qw = _rotation_matrix_to_quaternion(rotation)
+
+            pose = Pose()
+            pose.position.x = float(translation[0])
+            pose.position.y = float(translation[1])
+            pose.position.z = float(translation[2])
+            pose.orientation.x = float(qx)
+            pose.orientation.y = float(qy)
+            pose.orientation.z = float(qz)
+            pose.orientation.w = float(qw)
+            poses.append(pose)
 
         response.success = True
-        response.message = (
-            f'x={translation[0]:.6f} y={translation[1]:.6f} z={translation[2]:.6f} '
-            f'qx={qx:.6f} qy={qy:.6f} qz={qz:.6f} qw={qw:.6f}'
-        )
+        response.poses = poses
+        response.message = f'Returned {count} tracked grasp pose(s).'
         return response
 
 
