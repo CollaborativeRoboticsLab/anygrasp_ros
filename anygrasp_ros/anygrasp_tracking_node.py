@@ -22,6 +22,7 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 
+from tracker import AnyGraspTracker  # type: ignore
 
 def _rotation_matrix_to_quaternion(matrix: np.ndarray) -> Tuple[float, float, float, float]:
     trace = float(np.trace(matrix))
@@ -85,7 +86,6 @@ class AnyGraspTrackingNode(Node):
         self._latest_rgb: Optional[np.ndarray] = None
         self._latest_depth: Optional[np.ndarray] = None
 
-        self._ensure_anygrasp_tracking_on_path()
         self._tracker = self._init_tracker()
         self._grasp_ids: List[int] = []
 
@@ -100,23 +100,7 @@ class AnyGraspTrackingNode(Node):
 
         self.get_logger().info('AnyGrasp tracking node ready.')
 
-    def _ensure_anygrasp_tracking_on_path(self) -> None:
-        sdk_root = str(self.get_parameter('anygrasp_sdk_root').value)
-        tracking_dir = os.path.join(sdk_root, 'grasp_tracking')
-
-        if os.path.isdir(tracking_dir) and tracking_dir not in sys.path:
-            sys.path.append(tracking_dir)
-
     def _init_tracker(self):
-        try:
-            from tracker import AnyGraspTracker  # type: ignore
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                'Failed to import AnyGrasp tracking module `tracker`. '
-                'Check that the AnyGrasp SDK is available and that '
-                '`anygrasp_sdk_root/grasp_tracking` is on PYTHONPATH.'
-            ) from exc
-
         checkpoint_path = str(self.get_parameter('checkpoint_path').value)
         if not checkpoint_path:
             self.get_logger().warn('Parameter `checkpoint_path` is empty; tracking will fail until set.')

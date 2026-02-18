@@ -18,7 +18,7 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from sensor_msgs.msg import Image
 from std_srvs.srv import Trigger
 
-
+from gsnet import AnyGrasp
 
 def _rotation_matrix_to_quaternion(matrix: np.ndarray) -> Tuple[float, float, float, float]:
     """Convert a 3x3 rotation matrix to (x, y, z, w) quaternion."""
@@ -62,7 +62,6 @@ class AnyGraspDetectionNode(Node):
     def __init__(self) -> None:
         super().__init__('anygrasp_detection_node')
 
-        self.declare_parameter('anygrasp_sdk_root', '/dependencies/anygrasp_sdk')
         self.declare_parameter('checkpoint_path', '')
         self.declare_parameter('max_gripper_width', 0.10)
         self.declare_parameter('gripper_height', 0.03)
@@ -86,8 +85,6 @@ class AnyGraspDetectionNode(Node):
         self._lock = threading.Lock()
         self._latest_rgb: Optional[np.ndarray] = None
         self._latest_depth: Optional[np.ndarray] = None
-
-        self._ensure_anygrasp_detection_on_path()
         self._anygrasp = self._init_anygrasp()
 
         self._rgb_sub = Subscriber(self, Image, 'rgb_image')
@@ -101,23 +98,7 @@ class AnyGraspDetectionNode(Node):
 
         self.get_logger().info('AnyGrasp detection node ready.')
 
-    def _ensure_anygrasp_detection_on_path(self) -> None:
-        sdk_root = str(self.get_parameter('anygrasp_sdk_root').value)
-        detection_dir = os.path.join(sdk_root, 'grasp_detection')
-
-        if os.path.isdir(detection_dir) and detection_dir not in sys.path:
-            sys.path.append(detection_dir)
-
     def _init_anygrasp(self):
-        try:
-            from gsnet import AnyGrasp  # type: ignore
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                'Failed to import AnyGrasp detection module `gsnet`. '
-                'Check that the AnyGrasp SDK is available and that '
-                '`anygrasp_sdk_root/grasp_detection` is on PYTHONPATH.'
-            ) from exc
-
         checkpoint_path = str(self.get_parameter('checkpoint_path').value)
         if not checkpoint_path:
             self.get_logger().warn('Parameter `checkpoint_path` is empty; detection will fail until set.')
