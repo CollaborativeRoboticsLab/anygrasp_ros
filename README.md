@@ -23,26 +23,21 @@ cd /dependencies/anygrasp_sdk/license_registration/
 ./license_checker -f
 ```
 
-Once you fill the form and receive the license zip file, unzip and copy it to the `/license` folder within the cloned repo (Not inside the container). Then rebuild the container. This will automatically copy the license content into the following locations of the container,
+Once you fill the form and receive the license zip file, unzip and copy it to the `/license` folder within the cloned repo (Not inside the container). Devcontainer has been configured to mount the license folder into the following locations of the container,
 
-- `/dependencies/anygrasp_sdk/license_registration/license`  allows to run license checker
-- `/dependencies/anygrasp_sdk/grasp_detection/license`       allows to run the grasp detection
-- `/dependencies/anygrasp_sdk/grasp_tracking/license`        allows to run the grasp tracking
-- `/home/ubuntu/colcon_ws/license`                           allows to run the ros2 packages
+- `/home/ubuntu/colcon_ws/license`
 
 To check the license run following command
 
 ```bash
 cd /dependencies/anygrasp_sdk/license_registration/
-./license_checker -c license/licenseCfg.json
+./license_checker -c /home/ubuntu/colcon_ws/license/licenseCfg.json
 ```
 
 ### Adding model weights
 
-Copy the detection and tracking model weights into `weights/detection` and `weights/tracking` folders respectively and Rebuild the container. These will be loaded into following folders inside the container. 
+Copy the detection and tracking model weights into `weights/detection` and `weights/tracking` folders respectively. These will be mounted into following folders inside the container. 
 
-- `/dependencies/anygrasp_sdk/grasp_detection/log`       allows to run the grasp detection
-- `/dependencies/anygrasp_sdk/grasp_tracking/log`        allows to run the grasp tracking
 - `/home/ubuntu/colcon_ws/weights/detection`             allows to run the ros2 packages
 - `/home/ubuntu/colcon_ws/weights/tracking`              allows to run the ros2 packages
 
