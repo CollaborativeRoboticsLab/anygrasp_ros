@@ -17,8 +17,8 @@
   "workspaceFolder": "/home/ubuntu/colcon_ws",
   "mounts": [
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.bash_history,target=/home/ubuntu/.bash_history,type=bind",
-    "source=${localWorkspaceFolder}/license,target=/home/ubuntu/colcon_ws/license,type=bind",
-    "source=${localWorkspaceFolder}/weights/detection,target=/home/ubuntu/colcon_ws/weights/detection,type=bind",
-    "source=${localWorkspaceFolder}/weights/tracking,target=/home/ubuntu/colcon_ws/weights/tracking,type=bind"
+    "source=${localWorkspaceFolder}/license,target=/dependencies/precompiled/license,type=bind",
+    "source=${localWorkspaceFolder}/weights/detection,target=/dependencies/precompiled/weights/detection,type=bind",
+    "source=${localWorkspaceFolder}/weights/tracking,target=/dependencies/precompiled/weights/tracking,type=bind"
   ]
 }

@@ -75,15 +75,15 @@ RUN python -m pip install --no-cache-dir --no-build-isolation .
 ####        Rename and move the libraries 
 ############################################################################
 
-WORKDIR /dependencies/precompiled_libs
+WORKDIR /dependencies/precompiled
 
 # Move library files
-RUN cp /dependencies/anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled_libs/gsnet.so
-RUN cp /dependencies/anygrasp_sdk/license_registration/lib_cxx_versions/lib_cxx.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled_libs/lib_cxx.so
-RUN cp /dependencies/anygrasp_sdk/grasp_tracking/tracker_versions/tracker.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled_libs/tracker.so
+RUN cp /dependencies/anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled/gsnet.so
+RUN cp /dependencies/anygrasp_sdk/license_registration/lib_cxx_versions/lib_cxx.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled/lib_cxx.so
+RUN cp /dependencies/anygrasp_sdk/grasp_tracking/tracker_versions/tracker.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled/tracker.so
 
 # update python syspath
-ENV PYTHONPATH="${PYTHONPATH}:/dependencies/precompiled_libs"
+ENV PYTHONPATH="${PYTHONPATH}:/dependencies/precompiled"
 
 ############################################################################
 ####        Fix missing OpenSSL 1.1 / libcrypto.so.1.1
