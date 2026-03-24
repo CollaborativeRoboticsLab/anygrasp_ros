@@ -8,7 +8,7 @@
   },
   "runArgs": [
     "--privileged",
-    "--network=anygrasp_macvlan",
+    "--network=bridge",
     "--mac-address=02:42:de:ad:be:ff",
     "--gpus",
     "all"
@@ -19,6 +19,8 @@
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.bash_history,target=/home/ubuntu/.bash_history,type=bind",
     "source=${localWorkspaceFolder}/license,target=/dependencies/precompiled/license,type=bind",
     "source=${localWorkspaceFolder}/weights/detection,target=/dependencies/precompiled/weights/detection,type=bind",
-    "source=${localWorkspaceFolder}/weights/tracking,target=/dependencies/precompiled/weights/tracking,type=bind"
+    "source=${localWorkspaceFolder}/weights/tracking,target=/dependencies/precompiled/weights/tracking,type=bind",
+    "source=/dev,target=/dev,type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
   ]
 }
