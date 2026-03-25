@@ -42,7 +42,7 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument('rgb_topic', default_value='/rgb_image'),
             DeclareLaunchArgument('depth_topic', default_value='/depth_image'),
-            DeclareLaunchArgument('tracking_checkpoint', default_value=''),
+            DeclareLaunchArgument('tracking_checkpoint', default_value='/dependencies/precompiled/weights/tracking/checkpoint_tracking.tar'),
             DeclareLaunchArgument('fx', default_value='927.17'),
             DeclareLaunchArgument('fy', default_value='927.37'),
             DeclareLaunchArgument('cx', default_value='651.32'),

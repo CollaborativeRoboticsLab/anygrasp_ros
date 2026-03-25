@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import rclpy
+from rclpy.node import Node
+
 import threading
 from types import SimpleNamespace
 from typing import Optional, Tuple
 
 import numpy as np
-
-import rclpy
-from rclpy.node import Node
 
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber

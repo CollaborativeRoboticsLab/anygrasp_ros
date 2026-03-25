@@ -1,9 +1,5 @@
 FROM pytorch/pytorch:2.10.0-cuda12.6-cudnn9-devel AS base
 
-############################################################################
-####        Install MinkowskiEngine
-############################################################################
-
 ## Set environment variables for CUDA and PyTorch
 ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6" 
 ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
@@ -29,6 +25,23 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip config set global.break-system-packages true
+
+###################################################################################################
+####       Fallback to numpy 1.x version
+###################################################################################################
+
+## Fix for ImportError: A module that was compiled using NumPy 1.x cannot be run in NumPy 2.0.0 as 
+##         it may crash. To support both 1.x and 2.x versions of NumPy, modules must be compiled 
+##         with NumPy 2.0. Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
+
+RUN python -m pip uninstall -y numpy 
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3-numpy
+
+############################################################################
+####        Install MinkowskiEngine
+############################################################################
 
 ## Fix issues per https://github.com/Julie-tang00/Common-envs-issues/blob/main/Cuda12-MinkowskiEngine
 RUN sed -i 's/\bauto __raw = __to_address(__r.get());/auto __raw = std::__to_address(__r.get());/' /usr/include/c++/13/bits/shared_ptr_base.h
