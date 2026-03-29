@@ -86,6 +86,17 @@ Both nodes expose services using `anygrasp_msgs/srv/GetGrasps`:
 
 Each service takes a `count` in the request and returns `geometry_msgs/Pose[]` in the response.
 
+## Debugging
+
+Both nodes support optional debug image publishing:
+
+- Set `publish_annotated_image:=true` to publish `annotated_image` (`sensor_msgs/Image`) with grasp overlays.
+
+Both nodes can also read camera intrinsics from `sensor_msgs/CameraInfo` topics (instead of `fx/fy/cx/cy` parameters):
+
+- Set `use_depth_camera_info_topic:=true` (preferred) and/or `use_color_camera_info_topic:=true`
+- Set `depth_camera_info_topic_name` / `color_camera_info_topic_name` to match your camera topics
+
 ## More information
 
 - [Service Messages](./docs/usage_with_msgs.md)

@@ -63,6 +63,8 @@ Note: `depth_scale` is always taken from the parameter (it’s not present in `C
 - Optional debug topic:
 	- `annotated_image` (`sensor_msgs/Image`): RGB image with projected grasp centers labeled by index.
 
+Note: `publish_annotated_image` requires OpenCV (e.g. `python3-opencv`) at runtime.
+
 ## Example calls
 
 Request 1 pose:
