@@ -17,46 +17,20 @@ import numpy as np
 
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CameraInfo, Image
 from geometry_msgs.msg import Pose
 
 from anygrasp_msgs.srv import GetGrasps
 
 from tracker import AnyGraspTracker  # type: ignore
 
-def _rotation_matrix_to_quaternion(matrix: np.ndarray) -> Tuple[float, float, float, float]:
-    trace = float(np.trace(matrix))
-
-    if trace > 0.0:
-        s = 0.5 / np.sqrt(trace + 1.0)
-        w = 0.25 / s
-        x = (matrix[2, 1] - matrix[1, 2]) * s
-        y = (matrix[0, 2] - matrix[2, 0]) * s
-        z = (matrix[1, 0] - matrix[0, 1]) * s
-        return float(x), float(y), float(z), float(w)
-
-    if matrix[0, 0] > matrix[1, 1] and matrix[0, 0] > matrix[2, 2]:
-        s = 2.0 * np.sqrt(1.0 + matrix[0, 0] - matrix[1, 1] - matrix[2, 2])
-        w = (matrix[2, 1] - matrix[1, 2]) / s
-        x = 0.25 * s
-        y = (matrix[0, 1] + matrix[1, 0]) / s
-        z = (matrix[0, 2] + matrix[2, 0]) / s
-        return float(x), float(y), float(z), float(w)
-
-    if matrix[1, 1] > matrix[2, 2]:
-        s = 2.0 * np.sqrt(1.0 + matrix[1, 1] - matrix[0, 0] - matrix[2, 2])
-        w = (matrix[0, 2] - matrix[2, 0]) / s
-        x = (matrix[0, 1] + matrix[1, 0]) / s
-        y = 0.25 * s
-        z = (matrix[1, 2] + matrix[2, 1]) / s
-        return float(x), float(y), float(z), float(w)
-
-    s = 2.0 * np.sqrt(1.0 + matrix[2, 2] - matrix[0, 0] - matrix[1, 1])
-    w = (matrix[1, 0] - matrix[0, 1]) / s
-    x = (matrix[0, 2] + matrix[2, 0]) / s
-    y = (matrix[1, 2] + matrix[2, 1]) / s
-    z = 0.25 * s
-    return float(x), float(y), float(z), float(w)
+from anygrasp_ros.node_utils import (
+    annotate_grasps_on_image,
+    camera_info_to_intrinsics,
+    get_point_cloud_intrinsics,
+    prepare_point_cloud,
+    rotation_matrix_to_quaternion,
+)
 
 
 class AnyGraspTrackingNode(Node):
@@ -66,6 +40,14 @@ class AnyGraspTrackingNode(Node):
         self.declare_parameter('anygrasp_sdk_root', '/dependencies/anygrasp_sdk')
         self.declare_parameter('checkpoint_path', '')
         self.declare_parameter('filter', 'oneeuro')
+        self.declare_parameter('publish_annotated_image', False)
+
+        # Camera intrinsics from topics (if enabled) take precedence over these fx/fy/cx/cy parameters.
+        # Depth scale is always read from the parameter since CameraInfo doesn’t include it.
+        self.declare_parameter('use_color_camera_info_topic', False)
+        self.declare_parameter('color_camera_info_topic_name', '')
+        self.declare_parameter('use_depth_camera_info_topic', False)
+        self.declare_parameter('depth_camera_info_topic_name', '')
 
         # Camera intrinsics (defaults match SDK demo.py)
         self.declare_parameter('fx', 927.17)
@@ -83,11 +65,23 @@ class AnyGraspTrackingNode(Node):
 
         self._bridge = CvBridge()
         self._lock = threading.Lock()
+
+        self._params = SimpleNamespace()
+        self._color_intrinsics: Optional[SimpleNamespace] = None
+        self._depth_intrinsics: Optional[SimpleNamespace] = None
+        self._load_parameters()
+
         self._latest_rgb: Optional[np.ndarray] = None
         self._latest_depth: Optional[np.ndarray] = None
 
         self._tracker = self._init_tracker()
         self._grasp_ids: List[int] = []
+
+        self._setup_camera_info_subscriptions()
+
+        self._annotated_pub = None
+        if self._params.publish_annotated_image:
+            self._annotated_pub = self.create_publisher(Image, 'annotated_image', 10)
 
         self._rgb_sub = Subscriber(self, Image, 'rgb_image')
         self._depth_sub = Subscriber(self, Image, 'depth_image')
@@ -100,20 +94,103 @@ class AnyGraspTrackingNode(Node):
 
         self.get_logger().info('AnyGrasp tracking node ready.')
 
+    def _load_parameters(self) -> None:
+        self._params.anygrasp_sdk_root = str(self.get_parameter('anygrasp_sdk_root').value)
+        self._params.checkpoint_path = str(self.get_parameter('checkpoint_path').value)
+        self._params.filter = str(self.get_parameter('filter').value)
+        self._params.publish_annotated_image = bool(self.get_parameter('publish_annotated_image').value)
+
+        self._params.use_color_camera_info_topic = bool(self.get_parameter('use_color_camera_info_topic').value)
+        self._params.color_camera_info_topic_name = str(self.get_parameter('color_camera_info_topic_name').value)
+        self._params.use_depth_camera_info_topic = bool(self.get_parameter('use_depth_camera_info_topic').value)
+        self._params.depth_camera_info_topic_name = str(self.get_parameter('depth_camera_info_topic_name').value)
+
+        self._params.fx = float(self.get_parameter('fx').value)
+        self._params.fy = float(self.get_parameter('fy').value)
+        self._params.cx = float(self.get_parameter('cx').value)
+        self._params.cy = float(self.get_parameter('cy').value)
+        self._params.depth_scale = float(self.get_parameter('depth_scale').value)
+        self._params.depth_max = float(self.get_parameter('depth_max').value)
+
+        self._params.select_x = [float(v) for v in list(self.get_parameter('select_x').value)]
+        self._params.select_y = [float(v) for v in list(self.get_parameter('select_y').value)]
+        self._params.select_z = [float(v) for v in list(self.get_parameter('select_z').value)]
+        self._params.select_count = int(self.get_parameter('select_count').value)
+
     def _init_tracker(self):
-        checkpoint_path = str(self.get_parameter('checkpoint_path').value)
-        if not checkpoint_path:
+        if not self._params.checkpoint_path:
             self.get_logger().warn('Parameter `checkpoint_path` is empty; tracking will fail until set.')
 
         cfg = SimpleNamespace(
-            checkpoint_path=checkpoint_path,
-            filter=str(self.get_parameter('filter').value),
+            checkpoint_path=self._params.checkpoint_path,
+            filter=self._params.filter,
             debug=False,
         )
 
         tracker = AnyGraspTracker(cfg)
         tracker.load_net()
         return tracker
+
+    def _setup_camera_info_subscriptions(self) -> None:
+        self._color_info_sub = None
+        self._depth_info_sub = None
+
+        if self._params.use_color_camera_info_topic:
+            topic = self._params.color_camera_info_topic_name
+            if topic:
+                self._color_info_sub = self.create_subscription(CameraInfo, topic, self._on_color_camera_info, 10)
+                self.get_logger().info(f'Using color CameraInfo from topic: {topic}')
+            else:
+                self.get_logger().warn('`use_color_camera_info_topic` is true but `color_camera_info_topic_name` is empty; falling back to fx/fy/cx/cy params.')
+
+        if self._params.use_depth_camera_info_topic:
+            topic = self._params.depth_camera_info_topic_name
+            if topic:
+                self._depth_info_sub = self.create_subscription(CameraInfo, topic, self._on_depth_camera_info, 10)
+                self.get_logger().info(f'Using depth CameraInfo from topic: {topic}')
+            else:
+                self.get_logger().warn('`use_depth_camera_info_topic` is true but `depth_camera_info_topic_name` is empty; falling back to fx/fy/cx/cy params.')
+
+    def _camera_info_to_intrinsics(self, msg: CameraInfo) -> Optional[SimpleNamespace]:
+        return camera_info_to_intrinsics(msg)
+
+    def _on_color_camera_info(self, msg: CameraInfo) -> None:
+        intr = self._camera_info_to_intrinsics(msg)
+        if intr is None:
+            self.get_logger().warn('Received invalid color CameraInfo; ignoring.')
+            return
+        with self._lock:
+            self._color_intrinsics = intr
+
+    def _on_depth_camera_info(self, msg: CameraInfo) -> None:
+        intr = self._camera_info_to_intrinsics(msg)
+        if intr is None:
+            self.get_logger().warn('Received invalid depth CameraInfo; ignoring.')
+            return
+        with self._lock:
+            self._depth_intrinsics = intr
+
+    def _get_point_cloud_intrinsics(self) -> Tuple[float, float, float, float]:
+        """Return (fx, fy, cx, cy) for projecting depth into 3D.
+
+        Preference order:
+        1) depth CameraInfo (if enabled and received)
+        2) color CameraInfo (if enabled and received)
+        3) fx/fy/cx/cy parameters
+        """
+        with self._lock:
+            return get_point_cloud_intrinsics(
+                use_depth_camera_info_topic=bool(self._params.use_depth_camera_info_topic),
+                depth_camera_info_topic_name=str(self._params.depth_camera_info_topic_name),
+                depth_intrinsics=self._depth_intrinsics,
+                use_color_camera_info_topic=bool(self._params.use_color_camera_info_topic),
+                color_camera_info_topic_name=str(self._params.color_camera_info_topic_name),
+                color_intrinsics=self._color_intrinsics,
+                fx=float(self._params.fx),
+                fy=float(self._params.fy),
+                cx=float(self._params.cx),
+                cy=float(self._params.cy),
+            )
 
     def _sync_cb(self, rgb_msg: Image, depth_msg: Image) -> None:
         try:
@@ -132,39 +209,64 @@ class AnyGraspTrackingNode(Node):
             self._latest_depth = depth
 
     def _prepare_point_cloud(self, rgb_bgr: np.ndarray, depth: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        fx = float(self.get_parameter('fx').value)
-        fy = float(self.get_parameter('fy').value)
-        cx = float(self.get_parameter('cx').value)
-        cy = float(self.get_parameter('cy').value)
-        depth_scale = float(self.get_parameter('depth_scale').value)
-        depth_max = float(self.get_parameter('depth_max').value)
+        fx, fy, cx, cy = self._get_point_cloud_intrinsics()
+        return prepare_point_cloud(
+            rgb_bgr=rgb_bgr,
+            depth=depth,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+            depth_scale=float(self._params.depth_scale),
+            depth_max=float(self._params.depth_max),
+        )
 
-        if depth.dtype == np.uint16:
-            depth_m = depth.astype(np.float32) / depth_scale
-        else:
-            depth_m = depth.astype(np.float32)
+    def _publish_annotated_image(self, rgb_bgr: np.ndarray, gg, count: int) -> None:
+        if self._annotated_pub is None:
+            return
 
-        height, width = depth_m.shape[:2]
-        xmap, ymap = np.arange(width), np.arange(height)
-        xmap, ymap = np.meshgrid(xmap, ymap)
+        if rgb_bgr.ndim != 3 or rgb_bgr.shape[2] != 3:
+            self.get_logger().warn('RGB image is not 3-channel; skipping annotated image publish.')
+            return
 
-        points_z = depth_m
-        points_x = (xmap - cx) / fx * points_z
-        points_y = (ymap - cy) / fy * points_z
+        try:
+            fx, fy, cx, cy = self._get_point_cloud_intrinsics()
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warn(f'Cannot publish annotated image (intrinsics unavailable): {exc}')
+            return
 
-        points = np.stack([points_x, points_y, points_z], axis=-1)
-        rgb = rgb_bgr[:, :, ::-1].astype(np.float32) / 255.0
+        try:
+            translations = np.asarray(gg.translations)
+        except Exception as exc:  # noqa: BLE001
+            self.get_logger().warn(f'Cannot publish annotated image (missing translations): {exc}')
+            return
 
-        mask = (points_z > 0.0) & (points_z < depth_max)
-        points = points[mask].astype(np.float32)
-        colors = rgb[mask].astype(np.float32)
-        return points, colors
+        try:
+            rotation_matrices = np.asarray(gg.rotation_matrices)
+        except Exception:
+            rotation_matrices = None
+
+        annotated = annotate_grasps_on_image(
+            rgb_bgr=rgb_bgr,
+            translations=translations,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+            count=int(count),
+            rotation_matrices=rotation_matrices,
+            draw_orientation_axis=True,
+            axis_length=0.05,
+        )
+
+        msg = self._bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
+        self._annotated_pub.publish(msg)
 
     def _select_initial_grasp_ids(self, curr_gg) -> List[int]:
-        x_min, x_max = [float(v) for v in self.get_parameter('select_x').value]
-        y_min, y_max = [float(v) for v in self.get_parameter('select_y').value]
-        z_min, z_max = [float(v) for v in self.get_parameter('select_z').value]
-        select_count = int(self.get_parameter('select_count').value)
+        x_min, x_max = [float(v) for v in self._params.select_x]
+        y_min, y_max = [float(v) for v in self._params.select_y]
+        z_min, z_max = [float(v) for v in self._params.select_z]
+        select_count = int(self._params.select_count)
 
         translations = np.asarray(curr_gg.translations)
         mask_x = (translations[:, 0] > x_min) & (translations[:, 0] < x_max)
@@ -231,11 +333,15 @@ class AnyGraspTrackingNode(Node):
             return response
 
         count = min(int(len(target_gg)), target_count)
+
+        if self._params.publish_annotated_image:
+            self._publish_annotated_image(rgb, target_gg, count)
+
         poses = []
         for i in range(count):
             translation = np.asarray(target_gg.translations[i]).reshape(3)
             rotation = np.asarray(target_gg.rotation_matrices[i]).reshape(3, 3)
-            qx, qy, qz, qw = _rotation_matrix_to_quaternion(rotation)
+            qx, qy, qz, qw = rotation_matrix_to_quaternion(rotation)
 
             pose = Pose()
             pose.position.x = float(translation[0])

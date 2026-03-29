@@ -9,7 +9,11 @@ def generate_launch_description() -> LaunchDescription:
     depth_topic = LaunchConfiguration('depth_topic')
 
     tracking_checkpoint = LaunchConfiguration('tracking_checkpoint')
-
+    publish_annotated_image = LaunchConfiguration('publish_annotated_image')
+    use_color_camera_info_topic = LaunchConfiguration('use_color_camera_info_topic')
+    color_camera_info_topic_name = LaunchConfiguration('color_camera_info_topic_name')
+    use_depth_camera_info_topic = LaunchConfiguration('use_depth_camera_info_topic')
+    depth_camera_info_topic_name = LaunchConfiguration('depth_camera_info_topic_name')
     fx = LaunchConfiguration('fx')
     fy = LaunchConfiguration('fy')
     cx = LaunchConfiguration('cx')
@@ -24,6 +28,11 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             {
                 'checkpoint_path': tracking_checkpoint,
+                'publish_annotated_image': publish_annotated_image,
+                'use_color_camera_info_topic': use_color_camera_info_topic,
+                'color_camera_info_topic_name': color_camera_info_topic_name,
+                'use_depth_camera_info_topic': use_depth_camera_info_topic,
+                'depth_camera_info_topic_name': depth_camera_info_topic_name,
                 'fx': fx,
                 'fy': fy,
                 'cx': cx,
@@ -43,6 +52,11 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument('rgb_topic', default_value='/rgb_image'),
             DeclareLaunchArgument('depth_topic', default_value='/depth_image'),
             DeclareLaunchArgument('tracking_checkpoint', default_value='/dependencies/precompiled/weights/tracking/checkpoint_tracking.tar'),
+            DeclareLaunchArgument('publish_annotated_image', default_value='false'),
+            DeclareLaunchArgument('use_color_camera_info_topic', default_value='false'),
+            DeclareLaunchArgument('color_camera_info_topic_name', default_value='/camera/color/camera_info'),
+            DeclareLaunchArgument('use_depth_camera_info_topic', default_value='false'),
+            DeclareLaunchArgument('depth_camera_info_topic_name', default_value='/camera/depth/camera_info'),
             DeclareLaunchArgument('fx', default_value='927.17'),
             DeclareLaunchArgument('fy', default_value='927.37'),
             DeclareLaunchArgument('cx', default_value='651.32'),

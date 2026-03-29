@@ -9,6 +9,10 @@ The detection node subscribes to synchronized RGB + depth images, and returns gr
 	- `rgb_image` (`sensor_msgs/Image`)
 	- `depth_image` (`sensor_msgs/Image`)
 
+- Optional subscribed topics (only used if enabled via parameters):
+	- Color `CameraInfo` (`sensor_msgs/CameraInfo`)
+	- Depth `CameraInfo` (`sensor_msgs/CameraInfo`)
+
 The node caches the latest synchronized pair using an approximate time synchronizer.
 
 ## Service
@@ -29,9 +33,35 @@ Response:
 ## Parameters (high level)
 
 - `checkpoint_path` (string): required path to the AnyGrasp detection checkpoint.
-- Camera intrinsics: `fx`, `fy`, `cx`, `cy`, `depth_scale`, `depth_max`.
+- Camera intrinsics:
+	- Topic-based intrinsics (preferred when enabled):
+		- `use_color_camera_info_topic` (bool)
+		- `color_camera_info_topic_name` (string)
+		- `use_depth_camera_info_topic` (bool)
+		- `depth_camera_info_topic_name` (string)
+	- Parameter fallback intrinsics (used when topic-based intrinsics are disabled): `fx`, `fy`, `cx`, `cy`
+	- Depth conversion / filtering: `depth_scale`, `depth_max`
 - Workspace limits: `lims`.
 - Grasp options: `max_gripper_width`, `gripper_height`, `top_down_grasp`, `apply_object_mask`, `dense_grasp`, `collision_detection`.
+
+- Debug:
+	- `publish_annotated_image` (bool): if true, publishes an image with the top grasps overlaid.
+
+Intrinsics selection order when projecting depth into 3D:
+
+1) depth `CameraInfo` (if enabled + received)
+2) color `CameraInfo` (if enabled + received)
+3) `fx/fy/cx/cy` parameters
+
+If a `use_*_camera_info_topic` flag is enabled but no `CameraInfo` message has been received yet, the service will return `success=false` until intrinsics arrive.
+
+Note: `depth_scale` is always taken from the parameter (it’s not present in `CameraInfo`).
+
+## Outputs
+
+- Service response: grasp poses (`geometry_msgs/Pose[]`)
+- Optional debug topic:
+	- `annotated_image` (`sensor_msgs/Image`): RGB image with projected grasp centers labeled by index.
 
 ## Example calls
 
