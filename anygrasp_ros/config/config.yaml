@@ -1,0 +1,83 @@
+# AnyGrasp ROS 2 Configuration File
+# This file consolidates all ROS parameters for the AnyGrasp nodes
+
+# ============================================================================
+# DETECTION NODE PARAMETERS
+# ============================================================================
+anygrasp_detection_node:
+  ros__parameters:
+    # AnyGrasp SDK configuration
+    checkpoint_path: '/dependencies/precompiled/weights/detection/checkpoint_detection.tar'
+    max_gripper_width: 0.10
+    gripper_height: 0.03
+    top_down_grasp: false
+    apply_object_mask: true
+    dense_grasp: false
+    collision_detection: true
+
+    # Subscribe to pointcloud from rgbd_to_pointcloud_node
+    input_pointcloud: '/pointcloud'
+
+    # RViz grasp visualization topic
+    marker_topic: '/anygrasp/detection_markers'
+    
+    # Workspace limits [x_min, x_max, y_min, y_max, z_min, z_max]
+    lims: [-0.19, 0.12, 0.02, 0.15, 0.0, 1.0]
+
+# ============================================================================
+# TRACKING NODE PARAMETERS
+# ============================================================================
+anygrasp_tracking_node:
+  ros__parameters:
+    # AnyGrasp SDK configuration
+    anygrasp_sdk_root: '/dependencies/anygrasp_sdk'
+    checkpoint_path: '/dependencies/precompiled/weights/tracking/checkpoint_tracking.tar'
+    filter: 'oneeuro'
+
+    # Subscribe to pointcloud from rgbd_to_pointcloud_node
+    input_pointcloud: '/pointcloud'
+
+    # RViz grasp visualization topic
+    marker_topic: '/anygrasp/tracking_markers'
+    
+    # Initial grasp selection workspace (for initial grasp selection)
+    select_x: [-0.18, 0.18]
+    select_y: [-0.12, 0.12]
+    select_z: [0.35, 0.55]
+    select_count: 5
+
+# ============================================================================
+# RGBD TO POINTCLOUD NODE PARAMETERS
+# ============================================================================
+rgbd_to_pointcloud_node:
+  ros__parameters:
+    # Image and pointcloud topics
+    rgb_image_topic: '/camera/color/image_raw'
+    depth_image_topic: '/camera/depth/image_rect_raw'
+    pointcloud_topic: '/pointcloud'
+    
+    # Camera intrinsics configuration
+    # If use_*_camera_info_topic is true, intrinsics are read from the specified topic
+    # Otherwise, the hardcoded fx/fy/cx/cy values below are used
+    use_color_camera_info_topic: true
+    color_camera_info_topic_name: '/camera/color/camera_info'
+    
+    use_depth_camera_info_topic: true
+    depth_camera_info_topic_name: '/camera/depth/camera_info'
+    
+    # Fallback intrinsics (used if camera info topics are not available)
+    # These are Intel RealSense D435 defaults
+    fx: 927.17
+    fy: 927.37
+    cx: 651.32
+    cy: 349.62
+    
+    # Depth scale and maximum distance
+    depth_scale: 1000.0
+    depth_max: 1.5
+    
+    # TF-based depth-to-color frame alignment (recommended)
+    # Automatically detects frame IDs from image message headers
+    # Queries TF tree to find the transform between depth and color frames
+    # Set to false to output unaligned depth cloud (faster if alignment not needed)
+    align_depth_to_color: true

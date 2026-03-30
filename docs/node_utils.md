@@ -48,10 +48,14 @@ Builds a point cloud from aligned RGB + depth inputs:
 
 ### `annotate_grasps_on_image(...)`
 
-Creates a copy of the input RGB image and draws:
+**Status: Deprecated** — This function created debugging visualizations for 2D images. The system now uses 3D marker visualization in RViz instead (more informative for point cloud-based grasping).
 
-- A circle at each projected grasp center
-- The grasp index label
-- Optionally, a short orientation axis (when rotation matrices are provided)
+### `create_grasp_markers(...)`
 
-This output is published as `annotated_image` when `publish_annotated_image` is enabled.
+Builds a `visualization_msgs/MarkerArray` for RViz from a list of grasp poses:
+
+- One arrow marker per grasp pose
+- One text label per grasp index
+- A leading `DELETEALL` marker so each publish refreshes the full set cleanly
+
+Detection and tracking nodes both use this helper to render 3D grasp annotations directly in the point cloud frame.

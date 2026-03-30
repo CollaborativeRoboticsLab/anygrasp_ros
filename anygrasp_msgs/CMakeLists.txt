@@ -13,6 +13,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 set(srv_files
   "srv/GetGrasps.srv"
+  "srv/GetGraspsTracked.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

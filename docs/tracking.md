@@ -1,89 +1,118 @@
 
-# Tracking node
+# Tracking Node
 
-The tracking node subscribes to synchronized RGB + depth images and maintains grasp ID correspondences across frames.
+## Overview
 
-On the first successful service call, it selects initial grasp IDs from the current grasps using a configurable 3D selection box. Subsequent calls return tracked grasps.
+The `anygrasp_tracking_node` performs inference on a PointCloud2 and tracks grasp identities across frames. It consumes the pre-processed point cloud from the [RGBD to PointCloud](rgbd_to_pointcloud.md) node and runs AnyGrasp tracking on each PointCloud2 frame.
+
+## Pipeline
+
+- **Input**: PointCloud2 (RGB-colored, 3D points with xyz + rgb fields)
+- **First Call**: Selects initial grasp IDs from current frame using a 3D workspace selection box
+- **Subsequent Calls**: Returns tracked grasp IDs from ongoing tracking
+- **Output**: Tracked grasp poses via ROS 2 service
 
 ## Inputs
 
 - Subscribed topics (can be remapped):
-	- `rgb_image` (`sensor_msgs/Image`)
-	- `depth_image` (`sensor_msgs/Image`)
+  - `input_pointcloud` (`sensor_msgs/PointCloud2`): Pre-aligned, RGB-colored point cloud from the [RGBD preprocessing node](rgbd_to_pointcloud.md) (default: `/pointcloud`)
 
-- Optional subscribed topics (only used if enabled via parameters):
-	- Color `CameraInfo` (`sensor_msgs/CameraInfo`)
-	- Depth `CameraInfo` (`sensor_msgs/CameraInfo`)
+## Publications
 
-## Service
+- `marker_topic` (`visualization_msgs/MarkerArray`): RViz visualization of tracked grasp poses (default: `/anygrasp/tracking_markers`)
 
-- Service name (default in launch): `/anygrasp/tracking`
-- Service type: `anygrasp_msgs/srv/GetGrasps`
+## Service Interface
 
-Request:
+- **Service name**: `/anygrasp/tracking` (can be remapped via launch parameters)
+- **Service type**: `anygrasp_msgs/srv/GetGraspsTracked`
 
-- `count`: number of tracked grasp poses requested
+### Request
 
-Response:
+| Field | Type | Description |
+|-------|------|-------------|
+| `count` | int | Number of tracked grasp poses to return |
+| `input_ids` | int64[] | Specific tracked grasp IDs to update, or an empty list to auto-seed / track the current active set |
 
-- `poses`: `geometry_msgs/Pose[]` (up to `count` items)
-- `success`: boolean
-- `message`: status string
+### Response
 
-## Parameters (high level)
+| Field | Type | Description |
+|-------|------|-------------|
+| `ids` | int64[] | Stable tracked grasp IDs aligned one-to-one with `poses` |
+| `poses` | geometry_msgs/Pose[] | Array of tracked grasp poses (up to `count` items) |
+| `success` | bool | True if tracking succeeded |
+| `message` | string | Status/error message |
 
-- `checkpoint_path` (string): required path to the AnyGrasp tracking checkpoint.
-- `filter` (string): tracker filter option (default `oneeuro`).
-- Camera intrinsics:
-	- Topic-based intrinsics (preferred when enabled):
-		- `use_color_camera_info_topic` (bool)
-		- `color_camera_info_topic_name` (string)
-		- `use_depth_camera_info_topic` (bool)
-		- `depth_camera_info_topic_name` (string)
-	- Parameter fallback intrinsics (used when topic-based intrinsics are disabled): `fx`, `fy`, `cx`, `cy`
-	- Depth conversion / filtering: `depth_scale`, `depth_max`
+**Frame Reference**: All poses are in the point cloud frame (frame_id from PointCloud2 message, typically `color_optical_frame` or `depth_optical_frame`).
 
-- Debug:
-	- `publish_annotated_image` (bool): if true, publishes an image with the tracked grasps overlaid.
+## Parameters
 
-Initial grasp selection (used only when starting tracking):
+### AnyGrasp Configuration
 
-- `select_x`: `[min, max]` meters
-- `select_y`: `[min, max]` meters
-- `select_z`: `[min, max]` meters
-- `select_count`: how many grasps to seed for tracking
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `checkpoint_path` | string | (required) | Path to AnyGrasp tracking model checkpoint |
+| `filter` | string | `oneeuro` | Tracking filter type (options: `oneeuro`, `kalman`) |
 
-If no grasps fall inside the selection box, the service returns `success=false`.
+### Initial Grasp Selection (First Call)
 
-Intrinsics selection order when projecting depth into 3D:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `select_x` | float array | [-0.18, 0.18] | X-axis workspace range for initial grasp selection (meters) |
+| `select_y` | float array | [-0.12, 0.12] | Y-axis workspace range for initial grasp selection (meters) |
+| `select_z` | float array | [0.35, 0.55] | Z-axis workspace range for initial grasp selection (meters) |
+| `select_count` | int | 5 | Number of initial grasps to seed for tracking |
 
-1) depth `CameraInfo` (if enabled + received)
-2) color `CameraInfo` (if enabled + received)
-3) `fx/fy/cx/cy` parameters
+**Note**: If no grasps fall within the selection box on first call, the service returns `success=false`.
 
-If a `use_*_camera_info_topic` flag is enabled but no `CameraInfo` message has been received yet, the service will return `success=false` until intrinsics arrive.
+### Point Cloud Input
 
-Note: `depth_scale` is always taken from the parameter (it’s not present in `CameraInfo`).
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `input_pointcloud` | string | `/pointcloud` | Topic name for colored point cloud input (from [RGBD node](rgbd_to_pointcloud.md)) |
 
-## Outputs
+### RViz Visualization
 
-- Service response: tracked grasp poses (`geometry_msgs/Pose[]`)
-- Optional debug topic:
-	- `annotated_image` (`sensor_msgs/Image`): RGB image with projected grasp centers labeled by index. When available, a short orientation axis is drawn from each center.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `marker_topic` | string | `/anygrasp/tracking_markers` | Topic used to publish tracked grasp markers for RViz |
 
-Note: `publish_annotated_image` requires OpenCV (e.g. `python3-opencv`) at runtime.
+**Note**: Point cloud intrinsics and alignment are handled by the [RGBD to PointCloud node](rgbd_to_pointcloud.md). This tracking node consumes the pre-processed output directly.
 
-## Example calls
+## Usage
 
-Start / update tracking and request 1 pose:
+### Launch
 
 ```bash
-ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGrasps "{count: 1}"
+ros2 launch anygrasp_ros tracking.launch.py
 ```
 
-Request 3 poses:
+### Service Calls
+
+Initialize tracking (first call selects grasps from workspace box):
 
 ```bash
-ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGrasps "{count: 3}"
+ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGraspsTracked "{count: 3, input_ids: []}"
 ```
+
+Track specific previously returned IDs in subsequent frames:
+
+```bash
+ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGraspsTracked "{count: 2, input_ids: [2, 5]}"
+```
+
+### Status Codes
+
+- `success=true, ids=[...], poses=[...]`: Tracking succeeded with N grasps and stable IDs
+- `success=false, poses=[]`: No point cloud received or no grasps in selection box (first call only)
+  - Check that RGBD node is running: `ros2 topic hz /pointcloud`
+  - Check logs: `ros2 launch anygrasp_ros tracking.launch.py 2>&1 | grep -i error`
+
+### Request Semantics
+
+- `input_ids = []`: if no active tracked IDs exist, the node seeds them from the current frame; otherwise it updates the current tracked set.
+- `input_ids = [id1, id2, ...]`: the node updates only those tracked grasp IDs and returns poses in the same order as the surviving IDs.
+
+### RViz
+
+Add a `MarkerArray` display in RViz and subscribe it to `/anygrasp/tracking_markers` to inspect tracked grasp arrows and numeric IDs in 3D.
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -11,6 +11,14 @@ try:
 	from sensor_msgs.msg import CameraInfo
 except Exception:  # pragma: no cover
 	CameraInfo = object  # type: ignore
+
+try:
+	from geometry_msgs.msg import Pose
+	from visualization_msgs.msg import Marker, MarkerArray
+except Exception:  # pragma: no cover
+	Pose = object  # type: ignore
+	Marker = object  # type: ignore
+	MarkerArray = object  # type: ignore
 
 
 def rotation_matrix_to_quaternion(matrix: np.ndarray) -> Tuple[float, float, float, float]:
@@ -215,3 +223,69 @@ def annotate_grasps_on_image(
 				pass
 
 	return annotated
+
+
+def create_grasp_markers(
+	*,
+	poses: Sequence[Pose],
+	frame_id: str,
+	stamp,
+	namespace: str,
+	color: Tuple[float, float, float, float],
+	arrow_length: float = 0.08,
+	arrow_width: float = 0.01,
+	text_height: float = 0.03,
+	text_offset: float = 0.03,
+) -> MarkerArray:
+	"""Build RViz markers for grasp poses."""
+
+	markers = MarkerArray()
+
+	delete_all = Marker()
+	delete_all.header.frame_id = frame_id
+	delete_all.header.stamp = stamp
+	delete_all.ns = namespace
+	delete_all.id = 0
+	delete_all.action = Marker.DELETEALL
+	markers.markers.append(delete_all)
+
+	r, g, b, a = [float(v) for v in color]
+
+	for index, pose in enumerate(poses):
+		arrow = Marker()
+		arrow.header.frame_id = frame_id
+		arrow.header.stamp = stamp
+		arrow.ns = namespace
+		arrow.id = index * 2 + 1
+		arrow.type = Marker.ARROW
+		arrow.action = Marker.ADD
+		arrow.pose = pose
+		arrow.scale.x = float(arrow_length)
+		arrow.scale.y = float(arrow_width)
+		arrow.scale.z = float(arrow_width)
+		arrow.color.r = r
+		arrow.color.g = g
+		arrow.color.b = b
+		arrow.color.a = a
+		markers.markers.append(arrow)
+
+		label = Marker()
+		label.header.frame_id = frame_id
+		label.header.stamp = stamp
+		label.ns = f'{namespace}_labels'
+		label.id = index * 2 + 2
+		label.type = Marker.TEXT_VIEW_FACING
+		label.action = Marker.ADD
+		label.pose.position.x = float(pose.position.x)
+		label.pose.position.y = float(pose.position.y)
+		label.pose.position.z = float(pose.position.z) + float(text_offset)
+		label.pose.orientation.w = 1.0
+		label.scale.z = float(text_height)
+		label.color.r = r
+		label.color.g = g
+		label.color.b = b
+		label.color.a = a
+		label.text = str(index)
+		markers.markers.append(label)
+
+	return markers

@@ -1,0 +1,19 @@
+# number of poses to calculated
+int64 count
+
+# the ids of poses to be tracked
+int64[] input_ids
+---
+
+# tracked ids, different from input_ids as some poses can go out
+# of cameras view losing tracking
+int64[] ids
+
+# grasp poses in the same order as ids
+geometry_msgs/Pose[] poses
+
+# indicate successful run of triggered service
+bool success
+
+# informational, e.g. for error messages
+string message 

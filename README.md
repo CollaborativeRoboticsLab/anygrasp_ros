@@ -79,23 +79,21 @@ ros2 launch anygrasp_ros tracking.launch.py
 
 ## Services
 
-Both nodes expose services using `anygrasp_msgs/srv/GetGrasps`:
+The nodes expose these services:
 
-- `/anygrasp/detection` (detection)
-- `/anygrasp/tracking` (tracking)
+- `/anygrasp/detection` using `anygrasp_msgs/srv/GetGrasps`
+- `/anygrasp/tracking` using `anygrasp_msgs/srv/GetGraspsTracked`
 
-Each service takes a `count` in the request and returns `geometry_msgs/Pose[]` in the response.
+Each service takes a `count` in the request. Detection returns `geometry_msgs/Pose[]`; tracking returns `int64[] ids` aligned with `geometry_msgs/Pose[]`, and accepts `input_ids` as a list to select specific tracked grasps or `[]` to update the active set.
 
-## Debugging
+## Visualization
 
-Both nodes support optional debug image publishing:
+Both nodes publish RViz grasp markers as `visualization_msgs/MarkerArray`:
 
-- Set `publish_annotated_image:=true` to publish `annotated_image` (`sensor_msgs/Image`) with grasp overlays.
+- Detection markers: `/anygrasp/detection_markers`
+- Tracking markers: `/anygrasp/tracking_markers`
 
-Both nodes can also read camera intrinsics from `sensor_msgs/CameraInfo` topics (instead of `fx/fy/cx/cy` parameters):
-
-- Set `use_depth_camera_info_topic:=true` (preferred) and/or `use_color_camera_info_topic:=true`
-- Set `depth_camera_info_topic_name` / `color_camera_info_topic_name` to match your camera topics
+Add either topic as a `MarkerArray` display in RViz to inspect grasp poses and IDs in 3D.
 
 ## More information
 

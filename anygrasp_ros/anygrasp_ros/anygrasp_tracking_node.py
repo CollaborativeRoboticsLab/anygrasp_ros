@@ -1,8 +1,4 @@
-"""ROS 2 node wrapper for AnyGrasp grasp tracking.
-
-This node caches synchronized RGB + depth frames and runs the AnyGrasp tracking
-update loop on demand via a Trigger service.
-"""
+"""ROS 2 node wrapper for AnyGrasp grasp tracking."""
 
 from __future__ import annotations
 
@@ -10,114 +6,78 @@ import rclpy
 from rclpy.node import Node
 
 import threading
+import time
 from types import SimpleNamespace
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 
-from cv_bridge import CvBridge
-from message_filters import ApproximateTimeSynchronizer, Subscriber
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Pose
+from visualization_msgs.msg import MarkerArray
 
-from anygrasp_msgs.srv import GetGrasps
-
+from anygrasp_msgs.srv import GetGraspsTracked
 from tracker import AnyGraspTracker  # type: ignore
 
-from anygrasp_ros.node_utils import (
-    annotate_grasps_on_image,
-    camera_info_to_intrinsics,
-    get_point_cloud_intrinsics,
-    prepare_point_cloud,
-    rotation_matrix_to_quaternion,
-)
+from anygrasp_ros.node_utils import create_grasp_markers, rotation_matrix_to_quaternion
 
 
 class AnyGraspTrackingNode(Node):
     def __init__(self) -> None:
         super().__init__('anygrasp_tracking_node')
 
+        # Declare parameters
         self.declare_parameter('anygrasp_sdk_root', '/dependencies/anygrasp_sdk')
         self.declare_parameter('checkpoint_path', '')
         self.declare_parameter('filter', 'oneeuro')
-        self.declare_parameter('publish_annotated_image', False)
-
-        # Camera intrinsics from topics (if enabled) take precedence over these fx/fy/cx/cy parameters.
-        # Depth scale is always read from the parameter since CameraInfo doesn’t include it.
-        self.declare_parameter('use_color_camera_info_topic', False)
-        self.declare_parameter('color_camera_info_topic_name', '')
-        self.declare_parameter('use_depth_camera_info_topic', False)
-        self.declare_parameter('depth_camera_info_topic_name', '')
-
-        # Camera intrinsics (defaults match SDK demo.py)
-        self.declare_parameter('fx', 927.17)
-        self.declare_parameter('fy', 927.37)
-        self.declare_parameter('cx', 651.32)
-        self.declare_parameter('cy', 349.62)
-        self.declare_parameter('depth_scale', 1000.0)
-        self.declare_parameter('depth_max', 1.5)
-
-        # Initial selection workspace (matches tracking demo selection ranges)
+        self.declare_parameter('marker_topic', '/anygrasp/tracking_markers')
         self.declare_parameter('select_x', [-0.18, 0.18])
         self.declare_parameter('select_y', [-0.12, 0.12])
         self.declare_parameter('select_z', [0.35, 0.55])
         self.declare_parameter('select_count', 5)
+        self.declare_parameter('input_pointcloud', '/pointcloud')
 
-        self._bridge = CvBridge()
         self._lock = threading.Lock()
-
         self._params = SimpleNamespace()
-        self._color_intrinsics: Optional[SimpleNamespace] = None
-        self._depth_intrinsics: Optional[SimpleNamespace] = None
         self._load_parameters()
 
-        self._latest_rgb: Optional[np.ndarray] = None
-        self._latest_depth: Optional[np.ndarray] = None
+        # Cache latest pointcloud
+        self._latest_pointcloud: Optional[PointCloud2] = None
 
+        # FPS tracking
+        self._frame_times = []
+        self._frame_count = 0
+
+        # Initialize AnyGrasp tracker
         self._tracker = self._init_tracker()
         self._grasp_ids: List[int] = []
 
-        self._setup_camera_info_subscriptions()
+        self._marker_pub = self.create_publisher(MarkerArray, self._params.marker_topic, 10)
 
-        self._annotated_pub = None
-        if self._params.publish_annotated_image:
-            self._annotated_pub = self.create_publisher(Image, 'annotated_image', 10)
-
-        self._rgb_sub = Subscriber(self, Image, 'rgb_image')
-        self._depth_sub = Subscriber(self, Image, 'depth_image')
-        self._sync = ApproximateTimeSynchronizer(
-            [self._rgb_sub, self._depth_sub], queue_size=10, slop=0.05
+        # Subscribe to pointcloud from rgbd_to_pointcloud_node
+        self._pointcloud_sub = self.create_subscription(
+            PointCloud2, self._params.input_pointcloud, self._on_pointcloud, 10
         )
-        self._sync.registerCallback(self._sync_cb)
 
-        self._srv = self.create_service(GetGrasps, 'tracking', self._on_tracking)
+        # Create tracking service
+        self._srv = self.create_service(GetGraspsTracked, '/anygrasp/tracking', self._on_tracking)
 
         self.get_logger().info('AnyGrasp tracking node ready.')
 
     def _load_parameters(self) -> None:
+        """Load and cache parameters to avoid repeated get_parameter() calls."""
         self._params.anygrasp_sdk_root = str(self.get_parameter('anygrasp_sdk_root').value)
         self._params.checkpoint_path = str(self.get_parameter('checkpoint_path').value)
         self._params.filter = str(self.get_parameter('filter').value)
-        self._params.publish_annotated_image = bool(self.get_parameter('publish_annotated_image').value)
-
-        self._params.use_color_camera_info_topic = bool(self.get_parameter('use_color_camera_info_topic').value)
-        self._params.color_camera_info_topic_name = str(self.get_parameter('color_camera_info_topic_name').value)
-        self._params.use_depth_camera_info_topic = bool(self.get_parameter('use_depth_camera_info_topic').value)
-        self._params.depth_camera_info_topic_name = str(self.get_parameter('depth_camera_info_topic_name').value)
-
-        self._params.fx = float(self.get_parameter('fx').value)
-        self._params.fy = float(self.get_parameter('fy').value)
-        self._params.cx = float(self.get_parameter('cx').value)
-        self._params.cy = float(self.get_parameter('cy').value)
-        self._params.depth_scale = float(self.get_parameter('depth_scale').value)
-        self._params.depth_max = float(self.get_parameter('depth_max').value)
-
+        self._params.marker_topic = str(self.get_parameter('marker_topic').value)
         self._params.select_x = [float(v) for v in list(self.get_parameter('select_x').value)]
         self._params.select_y = [float(v) for v in list(self.get_parameter('select_y').value)]
         self._params.select_z = [float(v) for v in list(self.get_parameter('select_z').value)]
         self._params.select_count = int(self.get_parameter('select_count').value)
-
+        self._params.input_pointcloud = str(self.get_parameter('input_pointcloud').value)
+        
     def _init_tracker(self):
+        """Initialize AnyGrasp Tracker SDK."""
         if not self._params.checkpoint_path:
             self.get_logger().warn('Parameter `checkpoint_path` is empty; tracking will fail until set.')
 
@@ -131,138 +91,63 @@ class AnyGraspTrackingNode(Node):
         tracker.load_net()
         return tracker
 
-    def _setup_camera_info_subscriptions(self) -> None:
-        self._color_info_sub = None
-        self._depth_info_sub = None
-
-        if self._params.use_color_camera_info_topic:
-            topic = self._params.color_camera_info_topic_name
-            if topic:
-                self._color_info_sub = self.create_subscription(CameraInfo, topic, self._on_color_camera_info, 10)
-                self.get_logger().info(f'Using color CameraInfo from topic: {topic}')
-            else:
-                self.get_logger().warn('`use_color_camera_info_topic` is true but `color_camera_info_topic_name` is empty; falling back to fx/fy/cx/cy params.')
-
-        if self._params.use_depth_camera_info_topic:
-            topic = self._params.depth_camera_info_topic_name
-            if topic:
-                self._depth_info_sub = self.create_subscription(CameraInfo, topic, self._on_depth_camera_info, 10)
-                self.get_logger().info(f'Using depth CameraInfo from topic: {topic}')
-            else:
-                self.get_logger().warn('`use_depth_camera_info_topic` is true but `depth_camera_info_topic_name` is empty; falling back to fx/fy/cx/cy params.')
-
-    def _camera_info_to_intrinsics(self, msg: CameraInfo) -> Optional[SimpleNamespace]:
-        return camera_info_to_intrinsics(msg)
-
-    def _on_color_camera_info(self, msg: CameraInfo) -> None:
-        intr = self._camera_info_to_intrinsics(msg)
-        if intr is None:
-            self.get_logger().warn('Received invalid color CameraInfo; ignoring.')
-            return
+    def _on_pointcloud(self, msg: PointCloud2) -> None:
+        """Store the latest pointcloud."""
         with self._lock:
-            self._color_intrinsics = intr
+            self._latest_pointcloud = msg
 
-    def _on_depth_camera_info(self, msg: CameraInfo) -> None:
-        intr = self._camera_info_to_intrinsics(msg)
-        if intr is None:
-            self.get_logger().warn('Received invalid depth CameraInfo; ignoring.')
-            return
-        with self._lock:
-            self._depth_intrinsics = intr
-
-    def _get_point_cloud_intrinsics(self) -> Tuple[float, float, float, float]:
-        """Return (fx, fy, cx, cy) for projecting depth into 3D.
-
-        Preference order:
-        1) depth CameraInfo (if enabled and received)
-        2) color CameraInfo (if enabled and received)
-        3) fx/fy/cx/cy parameters
+    def _pointcloud2_to_arrays(self, msg: PointCloud2) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
-        with self._lock:
-            return get_point_cloud_intrinsics(
-                use_depth_camera_info_topic=bool(self._params.use_depth_camera_info_topic),
-                depth_camera_info_topic_name=str(self._params.depth_camera_info_topic_name),
-                depth_intrinsics=self._depth_intrinsics,
-                use_color_camera_info_topic=bool(self._params.use_color_camera_info_topic),
-                color_camera_info_topic_name=str(self._params.color_camera_info_topic_name),
-                color_intrinsics=self._color_intrinsics,
-                fx=float(self._params.fx),
-                fy=float(self._params.fy),
-                cx=float(self._params.cx),
-                cy=float(self._params.cy),
-            )
-
-    def _sync_cb(self, rgb_msg: Image, depth_msg: Image) -> None:
+        Convert PointCloud2 message to points and colors arrays.
+        
+        Expects PointCloud2 with fields: x, y, z, rgb (packed as uint32 0xRRGGBB)
+        
+        Returns:
+            Tuple of (points, colors) or (None, None) if conversion fails
+        """
         try:
-            rgb = self._bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='bgr8')
-        except Exception:  # noqa: BLE001
-            rgb = self._bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='passthrough')
+            # Get raw point data as bytes
+            num_points = msg.width
+            point_step = msg.point_step
+            
+            # Extract x, y, z coordinates
+            x_offset = 0
+            y_offset = 4
+            z_offset = 8
+            rgb_offset = 12
+            
+            points = np.zeros((num_points, 3), dtype=np.float32)
+            colors = np.zeros((num_points, 3), dtype=np.float32)
+            
+            for i in range(num_points):
+                # Parse xyz
+                idx = i * point_step
+                points[i, 0] = np.frombuffer(msg.data, dtype=np.float32, count=1, offset=idx + x_offset)[0]
+                points[i, 1] = np.frombuffer(msg.data, dtype=np.float32, count=1, offset=idx + y_offset)[0]
+                points[i, 2] = np.frombuffer(msg.data, dtype=np.float32, count=1, offset=idx + z_offset)[0]
+                
+                # Parse RGB (packed as uint32 0xRRGGBB)
+                rgb_uint32 = np.frombuffer(msg.data, dtype=np.uint32, count=1, offset=idx + rgb_offset)[0]
+                r = (rgb_uint32 >> 16) & 0xFF
+                g = (rgb_uint32 >> 8) & 0xFF
+                b = rgb_uint32 & 0xFF
+                colors[i, 0] = r / 255.0
+                colors[i, 1] = g / 255.0
+                colors[i, 2] = b / 255.0
+            
+            # Filter out invalid points (z == 0 or NaN)
+            valid_mask = (points[:, 2] > 0) & np.isfinite(points).all(axis=1)
+            points = points[valid_mask].astype(np.float32)
+            colors = colors[valid_mask].astype(np.float32)
+            
+            return points, colors
 
-        try:
-            depth = self._bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f'Failed to decode depth image: {exc}')
-            return
-
-        with self._lock:
-            self._latest_rgb = rgb
-            self._latest_depth = depth
-
-    def _prepare_point_cloud(self, rgb_bgr: np.ndarray, depth: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        fx, fy, cx, cy = self._get_point_cloud_intrinsics()
-        return prepare_point_cloud(
-            rgb_bgr=rgb_bgr,
-            depth=depth,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
-            depth_scale=float(self._params.depth_scale),
-            depth_max=float(self._params.depth_max),
-        )
-
-    def _publish_annotated_image(self, rgb_bgr: np.ndarray, gg, count: int) -> None:
-        if self._annotated_pub is None:
-            return
-
-        if rgb_bgr.ndim != 3 or rgb_bgr.shape[2] != 3:
-            self.get_logger().warn('RGB image is not 3-channel; skipping annotated image publish.')
-            return
-
-        try:
-            fx, fy, cx, cy = self._get_point_cloud_intrinsics()
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f'Cannot publish annotated image (intrinsics unavailable): {exc}')
-            return
-
-        try:
-            translations = np.asarray(gg.translations)
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f'Cannot publish annotated image (missing translations): {exc}')
-            return
-
-        try:
-            rotation_matrices = np.asarray(gg.rotation_matrices)
-        except Exception:
-            rotation_matrices = None
-
-        annotated = annotate_grasps_on_image(
-            rgb_bgr=rgb_bgr,
-            translations=translations,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
-            count=int(count),
-            rotation_matrices=rotation_matrices,
-            draw_orientation_axis=True,
-            axis_length=0.05,
-        )
-
-        msg = self._bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
-        self._annotated_pub.publish(msg)
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to parse PointCloud2: {exc}')
+            return None, None
 
     def _select_initial_grasp_ids(self, curr_gg) -> List[int]:
+        """Select initial grasp IDs based on workspace limits."""
         x_min, x_max = [float(v) for v in self._params.select_x]
         y_min, y_max = [float(v) for v in self._params.select_y]
         z_min, z_max = [float(v) for v in self._params.select_z]
@@ -275,88 +160,207 @@ class AnyGraspTrackingNode(Node):
         candidate_ids = np.where(mask_x & mask_y & mask_z)[0]
 
         if candidate_ids.size == 0:
+            self.get_logger().warn('No grasps found in initial selection workspace.')
             return []
 
-        # Sample across candidates like the demo (every Nth grasp).
+        # Sample across candidates
         stride = max(1, int(np.ceil(candidate_ids.size / max(1, select_count))))
         selected = candidate_ids[: stride * select_count : stride]
         return [int(i) for i in selected]
 
-    def _on_tracking(self, request: GetGrasps.Request, response: GetGrasps.Response) -> GetGrasps.Response:
+    def _grasp_to_pose(self, translation, rotation) -> Pose:
+        """Convert tracker translation and rotation arrays to a ROS pose."""
+        translation = np.asarray(translation).reshape(3)
+        rotation = np.asarray(rotation).reshape(3, 3)
+        qx, qy, qz, qw = rotation_matrix_to_quaternion(rotation)
+
+        pose = Pose()
+        pose.position.x = float(translation[0])
+        pose.position.y = float(translation[1])
+        pose.position.z = float(translation[2])
+        pose.orientation.x = float(qx)
+        pose.orientation.y = float(qy)
+        pose.orientation.z = float(qz)
+        pose.orientation.w = float(qw)
+        return pose
+
+    def _unique_ids(self, ids: list[int]) -> list[int]:
+        """Remove duplicate grasp ids while preserving order."""
+        unique_ids: list[int] = []
+        seen: set[int] = set()
+        for grasp_id in ids:
+            if grasp_id in seen:
+                continue
+            seen.add(grasp_id)
+            unique_ids.append(grasp_id)
+        return unique_ids
+
+    def _on_tracking(
+        self,
+        request: GetGraspsTracked.Request,
+        response: GetGraspsTracked.Response,
+    ) -> GetGraspsTracked.Response:
+        """Handle tracking service request."""
+        # Track FPS every 10 frames
+        frame_time = time.time()
+        self._frame_times.append(frame_time)
+        self._frame_count += 1
+
+        if self._frame_count % 10 == 0 and len(self._frame_times) > 1:
+            time_diff = self._frame_times[-1] - self._frame_times[0]
+            if time_diff > 0:
+                fps = (len(self._frame_times) - 1) / time_diff
+                self.get_logger().info(f'Tracking FPS: {fps:.2f}')
+            # Reset for next batch
+            self._frame_times.clear()
+            self._frame_count = 0
+
         requested_count = int(request.count)
         target_count = 1 if requested_count <= 0 else requested_count
+        requested_ids = self._unique_ids([int(grasp_id) for grasp_id in request.input_ids])
 
+        # Get latest pointcloud
         with self._lock:
-            rgb = None if self._latest_rgb is None else self._latest_rgb.copy()
-            depth = None if self._latest_depth is None else self._latest_depth.copy()
+            pointcloud = self._latest_pointcloud
 
-        if rgb is None or depth is None:
+        if pointcloud is None:
+            self._publish_grasp_markers([], '', None)
             response.success = False
-            response.message = 'No synchronized /rgb_image and /depth_image received yet.'
+            response.message = 'No pointcloud received yet.'
+            response.ids = []
             response.poses = []
             return response
 
-        try:
-            points, colors = self._prepare_point_cloud(rgb, depth)
-        except Exception as exc:  # noqa: BLE001
+        # Convert PointCloud2 to arrays
+        points, colors = self._pointcloud2_to_arrays(pointcloud)
+
+        if points is None or len(points) == 0:
+            self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
-            response.message = f'Failed to build point cloud: {exc}'
+            response.message = 'Invalid or empty pointcloud.'
+            response.ids = []
             response.poses = []
             return response
 
+        # Run AnyGrasp tracking
         try:
-            grasp_ids = self._grasp_ids if self._grasp_ids else [0]
-            target_gg, curr_gg, target_grasp_ids, _corres_preds = self._tracker.update(points, colors, grasp_ids)
+            result_ids: List[int] = []
+            poses: List[Pose] = []
+            # If no grasp IDs yet, run detection first to initialize
+            if len(self._grasp_ids) == 0:
+                # First detection
+                curr_gg, _cloud = self._tracker.get_grasp(points, colors)
 
-            if not self._grasp_ids:
-                initial_ids = self._select_initial_grasp_ids(curr_gg)
-                if not initial_ids:
+                if len(curr_gg) == 0:
+                    self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
                     response.success = False
-                    response.message = 'No suitable initial grasps found to start tracking.'
+                    response.message = 'No grasps detected for initial tracking.'
+                    response.ids = []
+                    response.poses = []
                     return response
 
-                self._grasp_ids = initial_ids
-                target_gg = curr_gg[self._grasp_ids]
+                try:
+                    curr_gg = curr_gg.nms().sort_by_score()
+                except Exception:
+                    pass
+
+                if requested_ids:
+                    invalid_ids = [grasp_id for grasp_id in requested_ids if grasp_id < 0 or grasp_id >= len(curr_gg)]
+                    if invalid_ids:
+                        self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
+                        response.success = False
+                        response.message = f'Requested input_ids {invalid_ids} are not available in the initial grasp set.'
+                        response.ids = []
+                        response.poses = []
+                        return response
+                    self._grasp_ids = list(requested_ids)
+                else:
+                    # Select initial grasps
+                    self._grasp_ids = self._select_initial_grasp_ids(curr_gg)
+
+                    if len(self._grasp_ids) == 0:
+                        # Fallback to top grasps if workspace selection failed
+                        self._grasp_ids = list(range(min(target_count, len(curr_gg))))
+
+                result_ids = list(self._grasp_ids[:target_count])
+                poses = [
+                    self._grasp_to_pose(curr_gg.translations[grasp_id], curr_gg.rotation_matrices[grasp_id])
+                    for grasp_id in result_ids
+                    if grasp_id < len(curr_gg)
+                ]
+                result_ids = result_ids[: len(poses)]
             else:
-                self._grasp_ids = [int(i) for i in np.asarray(target_grasp_ids).tolist()]
+                if requested_ids:
+                    inactive_ids = [grasp_id for grasp_id in requested_ids if grasp_id not in self._grasp_ids]
+                    if inactive_ids:
+                        self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
+                        response.success = False
+                        response.message = f'Requested tracked ids {inactive_ids} are not active.'
+                        response.ids = []
+                        response.poses = []
+                        return response
+                    tracked_ids = list(requested_ids)
+                else:
+                    tracked_ids = list(self._grasp_ids)
 
-        except Exception as exc:  # noqa: BLE001
+                gg = self._tracker.track_grasps(points, colors, tracked_ids)
+                surviving_ids = tracked_ids[: len(gg)]
+
+                if requested_ids:
+                    lost_ids = set(tracked_ids) - set(surviving_ids)
+                    if lost_ids:
+                        self._grasp_ids = [grasp_id for grasp_id in self._grasp_ids if grasp_id not in lost_ids]
+                else:
+                    self._grasp_ids = list(surviving_ids)
+
+                result_ids = surviving_ids[:target_count]
+                poses = [
+                    self._grasp_to_pose(gg.translations[i], gg.rotation_matrices[i])
+                    for i in range(len(result_ids))
+                ]
+
+        except Exception as exc:
+            self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
-            response.message = f'AnyGrasp tracking update failed: {exc}'
+            response.message = f'AnyGrasp tracking failed: {exc}'
+            response.ids = []
             response.poses = []
             return response
 
-        if len(target_gg) == 0:
+        if len(poses) == 0:
+            self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
-            response.message = 'Tracking produced no grasps.'
+            response.message = 'No grasps tracked.'
+            response.ids = []
             response.poses = []
             return response
 
-        count = min(int(len(target_gg)), target_count)
-
-        if self._params.publish_annotated_image:
-            self._publish_annotated_image(rgb, target_gg, count)
-
-        poses = []
-        for i in range(count):
-            translation = np.asarray(target_gg.translations[i]).reshape(3)
-            rotation = np.asarray(target_gg.rotation_matrices[i]).reshape(3, 3)
-            qx, qy, qz, qw = rotation_matrix_to_quaternion(rotation)
-
-            pose = Pose()
-            pose.position.x = float(translation[0])
-            pose.position.y = float(translation[1])
-            pose.position.z = float(translation[2])
-            pose.orientation.x = float(qx)
-            pose.orientation.y = float(qy)
-            pose.orientation.z = float(qz)
-            pose.orientation.w = float(qw)
-            poses.append(pose)
+        if len(self._grasp_ids) == 0:
+            response.success = False
+            response.message = 'No tracked grasp IDs available.'
+            response.ids = []
+            response.poses = []
+            return response
 
         response.success = True
+        response.ids = [int(grasp_id) for grasp_id in result_ids]
         response.poses = poses
-        response.message = f'Returned {count} tracked grasp pose(s).'
+        response.message = f'Returned {len(poses)} tracked grasp pose(s).'
+        self._publish_grasp_markers(poses, pointcloud.header.frame_id, pointcloud.header.stamp)
         return response
+
+    def _publish_grasp_markers(self, poses: list[Pose], frame_id: str, stamp) -> None:
+        """Publish RViz markers for the current tracked grasp set."""
+        marker_frame = frame_id or 'map'
+        marker_stamp = stamp if stamp is not None else self.get_clock().now().to_msg()
+        markers = create_grasp_markers(
+            poses=poses,
+            frame_id=marker_frame,
+            stamp=marker_stamp,
+            namespace='tracking_grasps',
+            color=(1.0, 0.55, 0.1, 0.9),
+        )
+        self._marker_pub.publish(markers)
 
 
 def main(args=None) -> None:

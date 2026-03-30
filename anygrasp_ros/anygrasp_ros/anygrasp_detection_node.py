@@ -6,33 +6,27 @@ import rclpy
 from rclpy.node import Node
 
 import threading
+import time
 from types import SimpleNamespace
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
-from cv_bridge import CvBridge
-from message_filters import ApproximateTimeSynchronizer, Subscriber
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Pose
+from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGrasps
-
 from gsnet import AnyGrasp
 
-from anygrasp_ros.node_utils import (
-    annotate_grasps_on_image,
-    camera_info_to_intrinsics,
-    get_point_cloud_intrinsics,
-    prepare_point_cloud,
-    rotation_matrix_to_quaternion,
-)
+from anygrasp_ros.node_utils import create_grasp_markers, rotation_matrix_to_quaternion
 
 
 class AnyGraspDetectionNode(Node):
     def __init__(self) -> None:
         super().__init__('anygrasp_detection_node')
 
+        # Declare parameters
         self.declare_parameter('checkpoint_path', '')
         self.declare_parameter('max_gripper_width', 0.10)
         self.declare_parameter('gripper_height', 0.03)
@@ -40,55 +34,33 @@ class AnyGraspDetectionNode(Node):
         self.declare_parameter('apply_object_mask', True)
         self.declare_parameter('dense_grasp', False)
         self.declare_parameter('collision_detection', True)
-        self.declare_parameter('publish_annotated_image', False)
-
-        # Camera intrinsics from topics (if enabled) take precedence over these fx/fy/cx/cy parameters. 
-        # Depth scale is always read from the parameter since CameraInfo doesn’t include it.
-        self.declare_parameter("use_color_camera_info_topic", False)
-        self.declare_parameter("color_camera_info_topic_name", '')
-        self.declare_parameter("use_depth_camera_info_topic", False)
-        self.declare_parameter("depth_camera_info_topic_name", '')
-
-        # These are only used if `use_color_camera_info_topic` is false. If true, intrinsics will be 
-        # read from the specified topic instead.
-        self.declare_parameter('fx', 927.17)
-        self.declare_parameter('fy', 927.37)
-        self.declare_parameter('cx', 651.32)
-        self.declare_parameter('cy', 349.62)
-        self.declare_parameter('depth_scale', 1000.0)
-        self.declare_parameter('depth_max', 1.0)
-
-        # Workspace limits (defaults match SDK demo.py)
+        self.declare_parameter('marker_topic', '/anygrasp/detection_markers')
         self.declare_parameter('lims', [-0.19, 0.12, 0.02, 0.15, 0.0, 1.0])
+        self.declare_parameter('input_pointcloud', '/pointcloud')
 
-        self._bridge = CvBridge()
         self._lock = threading.Lock()
-
         self._params = SimpleNamespace()
-        self._color_intrinsics: Optional[SimpleNamespace] = None
-        self._depth_intrinsics: Optional[SimpleNamespace] = None
-
         self._load_parameters()
 
-        self._latest_rgb: Optional[np.ndarray] = None
-        self._latest_depth: Optional[np.ndarray] = None
+        # Cache latest pointcloud
+        self._latest_pointcloud: Optional[PointCloud2] = None
 
+        # FPS tracking
+        self._frame_times = []
+        self._frame_count = 0
+
+        # Initialize AnyGrasp
         self._anygrasp = self._init_anygrasp()
 
-        self._setup_camera_info_subscriptions()
+        self._marker_pub = self.create_publisher(MarkerArray, self._params.marker_topic, 10)
 
-        self._annotated_pub = None
-        if self._params.publish_annotated_image:
-            self._annotated_pub = self.create_publisher(Image, 'annotated_image', 10)
-
-        self._rgb_sub = Subscriber(self, Image, 'rgb_image')
-        self._depth_sub = Subscriber(self, Image, 'depth_image')
-        self._sync = ApproximateTimeSynchronizer(
-            [self._rgb_sub, self._depth_sub], queue_size=10, slop=0.05
+        # Subscribe to pointcloud from rgbd_to_pointcloud_node
+        self._pointcloud_sub = self.create_subscription(
+            PointCloud2, self._params.input_pointcloud, self._on_pointcloud, 10
         )
-        self._sync.registerCallback(self._sync_cb)
 
-        self._srv = self.create_service(GetGrasps, 'detection', self._on_detection)
+        # Create detection service
+        self._srv = self.create_service(GetGrasps, '/anygrasp/detection', self._on_detection)
 
         self.get_logger().info('AnyGrasp detection node ready.')
 
@@ -104,23 +76,12 @@ class AnyGraspDetectionNode(Node):
         self._params.apply_object_mask = bool(self.get_parameter('apply_object_mask').value)
         self._params.dense_grasp = bool(self.get_parameter('dense_grasp').value)
         self._params.collision_detection = bool(self.get_parameter('collision_detection').value)
-        self._params.publish_annotated_image = bool(self.get_parameter('publish_annotated_image').value)
-
-        self._params.use_color_camera_info_topic = bool(self.get_parameter('use_color_camera_info_topic').value)
-        self._params.color_camera_info_topic_name = str(self.get_parameter('color_camera_info_topic_name').value)
-        self._params.use_depth_camera_info_topic = bool(self.get_parameter('use_depth_camera_info_topic').value)
-        self._params.depth_camera_info_topic_name = str(self.get_parameter('depth_camera_info_topic_name').value)
-
-        self._params.fx = float(self.get_parameter('fx').value)
-        self._params.fy = float(self.get_parameter('fy').value)
-        self._params.cx = float(self.get_parameter('cx').value)
-        self._params.cy = float(self.get_parameter('cy').value)
-        self._params.depth_scale = float(self.get_parameter('depth_scale').value)
-        self._params.depth_max = float(self.get_parameter('depth_max').value)
-
+        self._params.marker_topic = str(self.get_parameter('marker_topic').value)
         self._params.lims = [float(v) for v in list(self.get_parameter('lims').value)]
+        self._params.input_pointcloud = str(self.get_parameter('input_pointcloud').value)
 
     def _init_anygrasp(self):
+        """Initialize AnyGrasp SDK."""
         if not self._params.checkpoint_path:
             self.get_logger().warn('Parameter `checkpoint_path` is empty; detection will fail until set.')
 
@@ -136,155 +97,104 @@ class AnyGraspDetectionNode(Node):
         anygrasp.load_net()
         return anygrasp
 
-    def _setup_camera_info_subscriptions(self) -> None:
-        self._color_info_sub = None
-        self._depth_info_sub = None
-
-        if self._params.use_color_camera_info_topic:
-            topic = self._params.color_camera_info_topic_name
-            if topic:
-                self._color_info_sub = self.create_subscription(CameraInfo, topic, self._on_color_camera_info, 10)
-                self.get_logger().info(f'Using color CameraInfo from topic: {topic}')
-            else:
-                self.get_logger().warn('`use_color_camera_info_topic` is true but `color_camera_info_topic_name` is empty; falling back to fx/fy/cx/cy params.')
-
-        if self._params.use_depth_camera_info_topic:
-            topic = self._params.depth_camera_info_topic_name
-            if topic:
-                self._depth_info_sub = self.create_subscription(CameraInfo, topic, self._on_depth_camera_info, 10)
-                self.get_logger().info(f'Using depth CameraInfo from topic: {topic}')
-            else:
-                self.get_logger().warn('`use_depth_camera_info_topic` is true but `depth_camera_info_topic_name` is empty; falling back to fx/fy/cx/cy params.')
-
-    def _camera_info_to_intrinsics(self, msg: CameraInfo) -> Optional[SimpleNamespace]:
-        return camera_info_to_intrinsics(msg)
-
-    def _on_color_camera_info(self, msg: CameraInfo) -> None:
-        intr = self._camera_info_to_intrinsics(msg)
-        if intr is None:
-            self.get_logger().warn('Received invalid color CameraInfo; ignoring.')
-            return
+    def _on_pointcloud(self, msg: PointCloud2) -> None:
+        """Store the latest pointcloud."""
         with self._lock:
-            self._color_intrinsics = intr
+            self._latest_pointcloud = msg
 
-    def _on_depth_camera_info(self, msg: CameraInfo) -> None:
-        intr = self._camera_info_to_intrinsics(msg)
-        if intr is None:
-            self.get_logger().warn('Received invalid depth CameraInfo; ignoring.')
-            return
-        with self._lock:
-            self._depth_intrinsics = intr
-
-    def _get_point_cloud_intrinsics(self) -> Tuple[float, float, float, float]:
-        """Return (fx, fy, cx, cy) for projecting depth into 3D.
-
-        Preference order:
-        1) depth CameraInfo (if enabled and received)
-        2) color CameraInfo (if enabled and received)
-        3) fx/fy/cx/cy parameters
+    def _pointcloud2_to_arrays(self, msg: PointCloud2) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
-        with self._lock:
-            return get_point_cloud_intrinsics(
-                use_depth_camera_info_topic=bool(self._params.use_depth_camera_info_topic),
-                depth_camera_info_topic_name=str(self._params.depth_camera_info_topic_name),
-                depth_intrinsics=self._depth_intrinsics,
-                use_color_camera_info_topic=bool(self._params.use_color_camera_info_topic),
-                color_camera_info_topic_name=str(self._params.color_camera_info_topic_name),
-                color_intrinsics=self._color_intrinsics,
-                fx=float(self._params.fx),
-                fy=float(self._params.fy),
-                cx=float(self._params.cx),
-                cy=float(self._params.cy),
-            )
-
-    def _sync_cb(self, rgb_msg: Image, depth_msg: Image) -> None:
+        Convert PointCloud2 message to points and colors arrays.
+        
+        Expects PointCloud2 with fields: x, y, z, rgb (packed as uint32 0xRRGGBB)
+        
+        Returns:
+            Tuple of (points, colors) or (None, None) if conversion fails
+        """
         try:
-            rgb = self._bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='bgr8')
-        except Exception:  # noqa: BLE001
-            rgb = self._bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='passthrough')
+            # Get raw point data as bytes
+            num_points = msg.width
+            point_step = msg.point_step
+            
+            # Extract x, y, z coordinates
+            x_offset = 0
+            y_offset = 4
+            z_offset = 8
+            rgb_offset = 12
+            
+            points = np.zeros((num_points, 3), dtype=np.float32)
+            colors = np.zeros((num_points, 3), dtype=np.float32)
+            
+            for i in range(num_points):
+                # Parse xyz
+                idx = i * point_step
+                points[i, 0] = np.frombuffer(msg.data, dtype=np.float32, count=1, offset=idx + x_offset)[0]
+                points[i, 1] = np.frombuffer(msg.data, dtype=np.float32, count=1, offset=idx + y_offset)[0]
+                points[i, 2] = np.frombuffer(msg.data, dtype=np.float32, count=1, offset=idx + z_offset)[0]
+                
+                # Parse RGB (packed as uint32 0xRRGGBB)
+                rgb_uint32 = np.frombuffer(msg.data, dtype=np.uint32, count=1, offset=idx + rgb_offset)[0]
+                r = (rgb_uint32 >> 16) & 0xFF
+                g = (rgb_uint32 >> 8) & 0xFF
+                b = rgb_uint32 & 0xFF
+                colors[i, 0] = r / 255.0
+                colors[i, 1] = g / 255.0
+                colors[i, 2] = b / 255.0
+            
+            # Filter out invalid points (z == 0 or NaN)
+            valid_mask = (points[:, 2] > 0) & np.isfinite(points).all(axis=1)
+            points = points[valid_mask].astype(np.float32)
+            colors = colors[valid_mask].astype(np.float32)
+            
+            return points, colors
 
-        try:
-            depth = self._bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f'Failed to decode depth image: {exc}')
-            return
-
-        with self._lock:
-            self._latest_rgb = rgb
-            self._latest_depth = depth
-
-    def _prepare_point_cloud(self, rgb_bgr: np.ndarray, depth: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        fx, fy, cx, cy = self._get_point_cloud_intrinsics()
-        return prepare_point_cloud(
-            rgb_bgr=rgb_bgr,
-            depth=depth,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
-            depth_scale=float(self._params.depth_scale),
-            depth_max=float(self._params.depth_max),
-        )
-
-    def _publish_annotated_image(self, rgb_bgr: np.ndarray, gg, count: int) -> None:
-        if self._annotated_pub is None:
-            return
-
-        if rgb_bgr.ndim != 3 or rgb_bgr.shape[2] != 3:
-            self.get_logger().warn('RGB image is not 3-channel; skipping annotated image publish.')
-            return
-
-        try:
-            fx, fy, cx, cy = self._get_point_cloud_intrinsics()
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f'Cannot publish annotated image (intrinsics unavailable): {exc}')
-            return
-
-        try:
-            translations = np.asarray(gg.translations)
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().warn(f'Cannot publish annotated image (missing translations): {exc}')
-            return
-
-        annotated = annotate_grasps_on_image(
-            rgb_bgr=rgb_bgr,
-            translations=translations,
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
-            count=int(count),
-            rotation_matrices=None,
-            draw_orientation_axis=False,
-        )
-
-        msg = self._bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
-        self._annotated_pub.publish(msg)
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to parse PointCloud2: {exc}')
+            return None, None
 
     def _on_detection(self, request: GetGrasps.Request, response: GetGrasps.Response) -> GetGrasps.Response:
+        """Handle detection service request."""
+        # Track FPS every 10 frames
+        frame_time = time.time()
+        self._frame_times.append(frame_time)
+        self._frame_count += 1
+
+        if self._frame_count % 10 == 0 and len(self._frame_times) > 1:
+            time_diff = self._frame_times[-1] - self._frame_times[0]
+            if time_diff > 0:
+                fps = (len(self._frame_times) - 1) / time_diff
+                self.get_logger().info(f'Detection FPS: {fps:.2f}')
+            # Reset for next batch
+            self._frame_times.clear()
+            self._frame_count = 0
+
         requested_count = int(request.count)
         target_count = 1 if requested_count <= 0 else requested_count
 
+        # Get latest pointcloud
         with self._lock:
-            rgb = None if self._latest_rgb is None else self._latest_rgb.copy()
-            depth = None if self._latest_depth is None else self._latest_depth.copy()
+            pointcloud = self._latest_pointcloud
 
-        if rgb is None or depth is None:
+        if pointcloud is None:
+            self._publish_grasp_markers([], '', None)
             response.success = False
-            response.message = 'No synchronized /rgb_image and /depth_image received yet.'
+            response.message = 'No pointcloud received yet.'
             response.poses = []
             return response
 
-        try:
-            points, colors = self._prepare_point_cloud(rgb, depth)
-        except Exception as exc:  # noqa: BLE001
+        # Convert PointCloud2 to arrays
+        points, colors = self._pointcloud2_to_arrays(pointcloud)
+
+        if points is None or len(points) == 0:
+            self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
-            response.message = f'Failed to build point cloud: {exc}'
+            response.message = 'Invalid or empty pointcloud.'
             response.poses = []
             return response
 
         lims = list(self._params.lims)
 
+        # Run AnyGrasp detection
         try:
             gg, _cloud = self._anygrasp.get_grasp(
                 points,
@@ -294,13 +204,15 @@ class AnyGraspDetectionNode(Node):
                 dense_grasp=bool(self._params.dense_grasp),
                 collision_detection=bool(self._params.collision_detection),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
             response.message = f'AnyGrasp inference failed: {exc}'
             response.poses = []
             return response
 
         if len(gg) == 0:
+            self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
             response.message = 'No grasps detected.'
             response.poses = []
@@ -309,14 +221,12 @@ class AnyGraspDetectionNode(Node):
         try:
             gg = gg.nms().sort_by_score()
         except Exception:
-            # If SDK version doesn’t provide these, keep original order.
+            # If SDK version doesn't provide these methods, keep original order
             pass
 
         count = min(int(len(gg)), target_count)
 
-        if self._params.publish_annotated_image:
-            self._publish_annotated_image(rgb, gg, count)
-
+        # Convert grasp objects to poses
         poses = []
         for i in range(count):
             translation = np.asarray(gg.translations[i]).reshape(3)
@@ -336,7 +246,21 @@ class AnyGraspDetectionNode(Node):
         response.success = True
         response.poses = poses
         response.message = f'Returned {count} grasp pose(s).'
+        self._publish_grasp_markers(poses, pointcloud.header.frame_id, pointcloud.header.stamp)
         return response
+
+    def _publish_grasp_markers(self, poses: list[Pose], frame_id: str, stamp) -> None:
+        """Publish RViz markers for the current grasp set."""
+        marker_frame = frame_id or 'map'
+        marker_stamp = stamp if stamp is not None else self.get_clock().now().to_msg()
+        markers = create_grasp_markers(
+            poses=poses,
+            frame_id=marker_frame,
+            stamp=marker_stamp,
+            namespace='detection_grasps',
+            color=(0.1, 0.9, 0.2, 0.9),
+        )
+        self._marker_pub.publish(markers)
 
 
 def main(args=None) -> None:
