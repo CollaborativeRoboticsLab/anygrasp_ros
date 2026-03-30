@@ -11,7 +11,7 @@ Detection service definition:
 ```
 int64 count
 ---
-geometry_msgs/Pose[] poses
+geometry_msgs/PoseStamped[] poses
 bool success
 string message
 ```
@@ -23,7 +23,7 @@ int64 count
 int64[] input_ids
 ---
 int64[] ids
-geometry_msgs/Pose[] poses
+geometry_msgs/PoseStamped[] poses
 bool success
 string message
 ```
@@ -35,8 +35,9 @@ string message
 
 ## What you get back
 
-- Detection returns `poses`: list of `geometry_msgs/Pose` for the best grasp(s).
-- Tracking returns `ids` plus `poses`, where each ID matches the pose at the same array index.
+- Detection returns `poses`: list of `geometry_msgs/PoseStamped` for the best grasp(s).
+- Tracking returns `ids` plus `poses`, where each ID matches the stamped pose at the same array index.
+- Each returned pose header is copied from the source `PointCloud2` message, so `header.frame_id` matches the pointcloud frame.
 - For tracking requests, set `input_ids` to `[]` to auto-seed/update the active set, or provide one or more tracked IDs to update only those grasps.
 - `success`: `true` if grasps were produced.
 - `message`: short human-readable status.

@@ -6,14 +6,13 @@ import rclpy
 from rclpy.node import Node
 
 import threading
-import time
 from types import SimpleNamespace
 from typing import List, Optional
 
 import numpy as np
 
 from sensor_msgs.msg import PointCloud2
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseStamped
 from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGraspsTracked
@@ -43,10 +42,6 @@ class AnyGraspTrackingNode(Node):
 
         # Cache latest pointcloud
         self._latest_pointcloud: Optional[PointCloud2] = None
-
-        # FPS tracking
-        self._frame_times = []
-        self._frame_count = 0
 
         # Initialize AnyGrasp tracker
         self._tracker = self._init_tracker()
@@ -184,6 +179,13 @@ class AnyGraspTrackingNode(Node):
         pose.orientation.w = float(qw)
         return pose
 
+    def _pose_to_stamped(self, pose: Pose, header) -> PoseStamped:
+        """Attach the pointcloud header to a grasp pose."""
+        pose_stamped = PoseStamped()
+        pose_stamped.header = header
+        pose_stamped.pose = pose
+        return pose_stamped
+
     def _unique_ids(self, ids: list[int]) -> list[int]:
         """Remove duplicate grasp ids while preserving order."""
         unique_ids: list[int] = []
@@ -201,20 +203,6 @@ class AnyGraspTrackingNode(Node):
         response: GetGraspsTracked.Response,
     ) -> GetGraspsTracked.Response:
         """Handle tracking service request."""
-        # Track FPS every 10 frames
-        frame_time = time.time()
-        self._frame_times.append(frame_time)
-        self._frame_count += 1
-
-        if self._frame_count % 10 == 0 and len(self._frame_times) > 1:
-            time_diff = self._frame_times[-1] - self._frame_times[0]
-            if time_diff > 0:
-                fps = (len(self._frame_times) - 1) / time_diff
-                self.get_logger().info(f'Tracking FPS: {fps:.2f}')
-            # Reset for next batch
-            self._frame_times.clear()
-            self._frame_count = 0
-
         requested_count = int(request.count)
         target_count = 1 if requested_count <= 0 else requested_count
         requested_ids = self._unique_ids([int(grasp_id) for grasp_id in request.input_ids])
@@ -246,6 +234,7 @@ class AnyGraspTrackingNode(Node):
         try:
             result_ids: List[int] = []
             poses: List[Pose] = []
+            stamped_poses: List[PoseStamped] = []
             # If no grasp IDs yet, run detection first to initialize
             if len(self._grasp_ids) == 0:
                 # First detection
@@ -289,6 +278,7 @@ class AnyGraspTrackingNode(Node):
                     if grasp_id < len(curr_gg)
                 ]
                 result_ids = result_ids[: len(poses)]
+                stamped_poses = [self._pose_to_stamped(pose, pointcloud.header) for pose in poses]
             else:
                 if requested_ids:
                     inactive_ids = [grasp_id for grasp_id in requested_ids if grasp_id not in self._grasp_ids]
@@ -318,6 +308,7 @@ class AnyGraspTrackingNode(Node):
                     self._grasp_to_pose(gg.translations[i], gg.rotation_matrices[i])
                     for i in range(len(result_ids))
                 ]
+                stamped_poses = [self._pose_to_stamped(pose, pointcloud.header) for pose in poses]
 
         except Exception as exc:
             self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
@@ -344,7 +335,7 @@ class AnyGraspTrackingNode(Node):
 
         response.success = True
         response.ids = [int(grasp_id) for grasp_id in result_ids]
-        response.poses = poses
+        response.poses = stamped_poses
         response.message = f'Returned {len(poses)} tracked grasp pose(s).'
         self._publish_grasp_markers(poses, pointcloud.header.frame_id, pointcloud.header.stamp)
         return response

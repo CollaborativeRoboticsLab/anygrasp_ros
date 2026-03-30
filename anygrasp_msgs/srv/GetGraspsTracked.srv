@@ -10,7 +10,7 @@ int64[] input_ids
 int64[] ids
 
 # grasp poses in the same order as ids
-geometry_msgs/Pose[] poses
+geometry_msgs/PoseStamped[] poses
 
 # indicate successful run of triggered service
 bool success

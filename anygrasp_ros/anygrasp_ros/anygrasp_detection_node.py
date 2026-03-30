@@ -6,14 +6,13 @@ import rclpy
 from rclpy.node import Node
 
 import threading
-import time
 from types import SimpleNamespace
 from typing import Optional
 
 import numpy as np
 
 from sensor_msgs.msg import PointCloud2
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseStamped
 from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGrasps
@@ -44,10 +43,6 @@ class AnyGraspDetectionNode(Node):
 
         # Cache latest pointcloud
         self._latest_pointcloud: Optional[PointCloud2] = None
-
-        # FPS tracking
-        self._frame_times = []
-        self._frame_count = 0
 
         # Initialize AnyGrasp
         self._anygrasp = self._init_anygrasp()
@@ -154,20 +149,6 @@ class AnyGraspDetectionNode(Node):
 
     def _on_detection(self, request: GetGrasps.Request, response: GetGrasps.Response) -> GetGrasps.Response:
         """Handle detection service request."""
-        # Track FPS every 10 frames
-        frame_time = time.time()
-        self._frame_times.append(frame_time)
-        self._frame_count += 1
-
-        if self._frame_count % 10 == 0 and len(self._frame_times) > 1:
-            time_diff = self._frame_times[-1] - self._frame_times[0]
-            if time_diff > 0:
-                fps = (len(self._frame_times) - 1) / time_diff
-                self.get_logger().info(f'Detection FPS: {fps:.2f}')
-            # Reset for next batch
-            self._frame_times.clear()
-            self._frame_count = 0
-
         requested_count = int(request.count)
         target_count = 1 if requested_count <= 0 else requested_count
 
@@ -228,6 +209,7 @@ class AnyGraspDetectionNode(Node):
 
         # Convert grasp objects to poses
         poses = []
+        stamped_poses = []
         for i in range(count):
             translation = np.asarray(gg.translations[i]).reshape(3)
             rotation = np.asarray(gg.rotation_matrices[i]).reshape(3, 3)
@@ -243,8 +225,13 @@ class AnyGraspDetectionNode(Node):
             pose.orientation.w = float(qw)
             poses.append(pose)
 
+            pose_stamped = PoseStamped()
+            pose_stamped.header = pointcloud.header
+            pose_stamped.pose = pose
+            stamped_poses.append(pose_stamped)
+
         response.success = True
-        response.poses = poses
+        response.poses = stamped_poses
         response.message = f'Returned {count} grasp pose(s).'
         self._publish_grasp_markers(poses, pointcloud.header.frame_id, pointcloud.header.stamp)
         return response

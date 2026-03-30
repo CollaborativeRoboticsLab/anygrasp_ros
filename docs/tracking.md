@@ -38,11 +38,11 @@ The `anygrasp_tracking_node` performs inference on a PointCloud2 and tracks gras
 | Field | Type | Description |
 |-------|------|-------------|
 | `ids` | int64[] | Stable tracked grasp IDs aligned one-to-one with `poses` |
-| `poses` | geometry_msgs/Pose[] | Array of tracked grasp poses (up to `count` items) |
+| `poses` | geometry_msgs/PoseStamped[] | Array of tracked grasp poses (up to `count` items), stamped with the source point cloud header |
 | `success` | bool | True if tracking succeeded |
 | `message` | string | Status/error message |
 
-**Frame Reference**: All poses are in the point cloud frame (frame_id from PointCloud2 message, typically `color_optical_frame` or `depth_optical_frame`).
+**Frame Reference**: Each returned pose carries the point cloud frame in `poses[i].header.frame_id` and the point cloud timestamp in `poses[i].header.stamp`.
 
 ## Parameters
 
