@@ -18,7 +18,7 @@ The node maintains a cache of the latest point cloud for service requests.
 - Subscribed topics (can be remapped):
   - `input_pointcloud` (`sensor_msgs/PointCloud2`): Pre-aligned, RGB-colored point cloud from the [RGBD preprocessing node](rgbd_to_pointcloud.md) (default: `/pointcloud`)
 
-## Publications
+## Outputs
 
 - `marker_topic` (`visualization_msgs/MarkerArray`): RViz visualization of returned grasp poses (default: `/anygrasp/detection_markers`)
 
@@ -69,7 +69,7 @@ The node maintains a cache of the latest point cloud for service requests.
 |-----------|------|---------|-------------|
 | `input_pointcloud` | string | `/pointcloud` | Topic name for colored point cloud input (from [RGBD node](rgbd_to_pointcloud.md)) |
 
-### RViz Visualization
+### RViz Visualisation
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
