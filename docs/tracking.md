@@ -17,9 +17,9 @@ The `anygrasp_tracking_node` performs inference on a PointCloud2 and tracks gras
 - Subscribed topics (can be remapped):
   - `input_pointcloud` (`sensor_msgs/PointCloud2`): Pre-aligned, RGB-colored point cloud from the [RGBD preprocessing node](rgbd_to_pointcloud.md) (default: `/pointcloud`)
 
-## Publications
+## Outputs
 
-- `marker_topic` (`visualization_msgs/MarkerArray`): RViz visualization of tracked grasp poses (default: `/anygrasp/tracking_markers`)
+- `marker_topic` (`visualization_msgs/MarkerArray`): RViz visualisation of tracked grasp poses (default: `/anygrasp/tracking_markers`)
 
 ## Service Interface
 
@@ -62,7 +62,7 @@ The `anygrasp_tracking_node` performs inference on a PointCloud2 and tracks gras
 | `select_z` | float array | [0.35, 0.55] | Z-axis workspace range for initial grasp selection (meters) |
 | `select_count` | int | 5 | Number of initial grasps to seed for tracking |
 
-**Note**: If no grasps fall within the selection box on first call, the service returns `success=false`.
+**Note**: If no grasps fall within the selection box on the first call, the service returns `success=false`.
 
 ### Point Cloud Input
 
@@ -70,7 +70,7 @@ The `anygrasp_tracking_node` performs inference on a PointCloud2 and tracks gras
 |-----------|------|---------|-------------|
 | `input_pointcloud` | string | `/pointcloud` | Topic name for colored point cloud input (from [RGBD node](rgbd_to_pointcloud.md)) |
 
-### RViz Visualization
+### RViz Visualisation
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -88,7 +88,7 @@ ros2 launch anygrasp_ros tracking.launch.py
 
 ### Service Calls
 
-Initialize tracking (first call selects grasps from workspace box):
+Initialise tracking (first call selects grasps from workspace box):
 
 ```bash
 ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGraspsTracked "{count: 3, input_ids: []}"
@@ -104,12 +104,12 @@ ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGraspsTracked "{count:
 
 - `success=true, ids=[...], poses=[...]`: Tracking succeeded with N grasps and stable IDs
 - `success=false, poses=[]`: No point cloud received or no grasps in selection box (first call only)
-  - Check that RGBD node is running: `ros2 topic hz /pointcloud`
+  - Check that the RGBD node is running: `ros2 topic hz /pointcloud`
   - Check logs: `ros2 launch anygrasp_ros tracking.launch.py 2>&1 | grep -i error`
 
 ### Request Semantics
 
-- `input_ids = []`: if no active tracked IDs exist, the node seeds them from the current frame; otherwise it updates the current tracked set.
+- `input_ids = []`: if no active tracked IDs exist, the node seeds them from the current frame; otherwise, it updates the current tracked set.
 - `input_ids = [id1, id2, ...]`: the node updates only those tracked grasp IDs and returns poses in the same order as the surviving IDs.
 
 ### RViz
