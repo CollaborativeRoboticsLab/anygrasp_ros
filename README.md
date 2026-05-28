@@ -3,7 +3,7 @@
 ROS 2 wrappers for AnyGrasp detection and tracking.
 
 The devcontainer is based on [pytorch/pytorch:2.10.0-cuda12.6-cudnn9-devel](https://hub.docker.com/layers/pytorch/pytorch/2.10.0-cuda12.6-cudnn9-devel/images/sha256-df80e10d07cd114c5f33380e3df7b6c5a3caab8481f68509ea652a7c0908316e) image and provides
-- Pytorch 2.10
+- Pytorch 2.9.1
 - CUDA 12.6
 - CUDNN9
 - ROS Jazzy (Base container is ubuntu 24.04)
