@@ -1,5 +1,5 @@
 {
-  "name": "Anygrasp Jazzy base",
+  "name": "Anygrasp Humble base",
   "context": "../",
   "dockerFile": "Dockerfile",
   "remoteUser": "ubuntu",
