@@ -97,6 +97,7 @@ Add either topic as a `MarkerArray` display in RViz to inspect grasp poses and I
 
 ## More information
 
+- [External container using network=host](./docs/external/container.md)
 - [Service Messages](./docs/usage_with_msgs.md)
 - [Grasp Detection](./docs/detection.md)
 - [Grasp Tracking](./docs/tracking.md)
