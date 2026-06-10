@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.9.1-cuda12.6-cudnn9-devel AS base
+FROM nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04 AS base
 
 ## Set environment variables for CUDA and PyTorch
 ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6" 
@@ -21,10 +21,14 @@ RUN apt-get update && \
     ninja-build \
     net-tools \
     libopenblas-dev \
+    python3 \
+    python3-pip \
+    python3-dev \
+    python3-venv \
+    python3-numpy \
+    python-is-python3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-RUN python -m pip config set global.break-system-packages true
 
 ###################################################################################################
 ####       Fallback to numpy 1.x version
@@ -34,17 +38,20 @@ RUN python -m pip config set global.break-system-packages true
 ##         it may crash. To support both 1.x and 2.x versions of NumPy, modules must be compiled 
 ##         with NumPy 2.0. Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
 
-RUN python -m pip uninstall -y numpy 
+# RUN python -m pip uninstall -y numpy 
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3-numpy
+############################################################################
+####        Install Pytoch and torchvision
+############################################################################
+
+RUN python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu126
 
 ############################################################################
 ####        Install MinkowskiEngine
 ############################################################################
 
 ## Fix issues per https://github.com/Julie-tang00/Common-envs-issues/blob/main/Cuda12-MinkowskiEngine
-RUN sed -i 's/\bauto __raw = __to_address(__r.get());/auto __raw = std::__to_address(__r.get());/' /usr/include/c++/13/bits/shared_ptr_base.h
+RUN sed -i 's/\bauto __raw = __to_address(__r.get());/auto __raw = std::__to_address(__r.get());/' /usr/include/c++/11/bits/shared_ptr_base.h
 
 WORKDIR /dependencies
 RUN git clone --recursive https://github.com/chenxi-wang/MinkowskiEngine.git
@@ -70,7 +77,7 @@ WORKDIR /dependencies
 RUN git clone https://github.com/graspnet/anygrasp_sdk.git
 
 WORKDIR /dependencies/anygrasp_sdk
-RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install "numpy<2.0" --no-cache-dir -r requirements.txt
 
 ############################################################################
 ####        Install pointnet2
@@ -82,7 +89,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 ## it, leading to ModuleNotFoundError. So  --no-build-isolation is needed.
 
 WORKDIR /dependencies/anygrasp_sdk/pointnet2
-RUN python -m pip install --no-cache-dir --no-build-isolation .
+RUN python -m pip install "numpy<2.0" --no-cache-dir --no-build-isolation .
 
 ############################################################################
 ####        Rename and move the libraries 
@@ -196,18 +203,25 @@ RUN apt-get update && \
 # Add vscode user with same UID and GID as your host system
 # (modified from https://code.visualstudio.com/remote/advancedcontainers/add-nonroot-user#_creating-a-nonroot-user)
 # ubuntu now has a 1000 user ubuntu
+RUN apt-get update && \
+    apt-get install  --no-install-recommends -y \
+    sudo  \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG USERNAME=ubuntu
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-RUN apt-get update && \
-    apt-get install  --no-install-recommends -y \
-    sudo  \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME
+
+RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
+
+RUN mkdir -p /home/ubuntu/colcon_ws/src /home/ubuntu/colcon_ws/build /home/ubuntu/colcon_ws/install /home/ubuntu/colcon_ws/log && \
+    touch /home/ubuntu/.bashrc && \
+    chown -R $USERNAME:$USERNAME /home/ubuntu
 
 # Switch from root to user
 USER $USERNAME
