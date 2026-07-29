@@ -13,6 +13,36 @@ The devcontainer is based on [nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04](https:
 - [graspnet/anygrasp_sdk](https://github.com/graspnet/anygrasp_sdk.git)
 - [Realsense packages](https://github.com/realsenseai/realsense-ros)
 
+## System Architecture
+
+![System Architecture](./docs/images/system.png)
+
+## Quick Start
+
+### Start the camera node
+
+Use the following command to start the camera node (realsense D435).
+
+```bash
+ros2 launch anygrasp_realsense d435.launch.py
+```
+
+### Starting the anygrasp detection system
+
+Use the following command to start the anygrasp detection system
+
+```bash
+ros2 launch anygrasp_ros detection.launch.py
+```
+
+### Starting the anygrasp tracking system
+
+Use the following command to start the anygrasp tracking system
+
+```bash
+ros2 launch anygrasp_ros tracking.launch.py
+```
+
 ## Creating docker network
 
 To have a stable feature id for the anygrasp license, we utilize built-in docker network `bridge` and a fixed mac address. For the dev container, this is represented by following config. Change the given mac address as required.
@@ -63,33 +93,13 @@ Copy the detection and tracking model weights into `weights/detection` and `weig
 
 This can also be done alongside the prior `Adding License` step.
 
+##  Camera setup
+
+Current container supports the realsense D435 camera. Follow the instructions in [Realsense Camera](./docs/camera/realsense.md) to setup and configure the camera.
+
 ## Basic testing
 
 Try running the `grasp_detection/demo.py` and `grasp_tracking/demo.py` to confirm the process pipeline is working.
-
-### Start the camera node
-
-Use the following command to start the camera node (realsense D435).
-
-```bash
-ros2 launch realsense2_camera rs_launch.py
-```
-
-### Starting the anygrasp detection system
-
-Use the following command to start the anygrasp detection system
-
-```bash
-ros2 launch anygrasp_ros detection.launch.py
-```
-
-### Starting the anygrasp tracking system
-
-Use the following command to start the anygrasp tracking system
-
-```bash
-ros2 launch anygrasp_ros tracking.launch.py
-```
 
 ## Services
 
@@ -120,3 +130,4 @@ Add either topic as a `MarkerArray` display in RViz to inspect grasp poses and I
 - [Service Messages](./docs/usage_with_msgs.md)
 - [Grasp Detection](./docs/detection.md)
 - [Grasp Tracking](./docs/tracking.md)
+- [Realsense Camera](./docs/camera/realsense.md)
