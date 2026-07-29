@@ -38,12 +38,13 @@ We need to update the ROS2 DDS network configuration for all entities to make th
 
 ## Adding license
 
-Once the Container is built, run the `license_checker` function from anygrasp_sdk and apply for the license following the steps from [here](https://github.com/graspnet/anygrasp_sdk/blob/main/license_registration/README.md). 
+Once the Container is built, run the following command to get the `feature id` and apply for the license [following the steps](https://github.com/graspnet/anygrasp_sdk/blob/main/license_registration/README.md).
 
 Following commands will help to run the `license_checker` within the dev container.
 
 ```bash
-/dependencies/anygrasp_sdk/license_registration/license_checker -f
+cd /dependencies/precompiled
+python -c "from gsnet import get_feature_id; print(get_feature_id())"
 ```
 
 Once you fill the form and receive the license zip file, unzip and copy it to the `/license` folder within the cloned repo (Not inside the container). Devcontainer has been configured to mount the license folder into the following locations of the container,
@@ -53,17 +54,18 @@ Once you fill the form and receive the license zip file, unzip and copy it to th
 To check the license run following command
 
 ```bash
-/dependencies/anygrasp_sdk/license_registration/license_checker -c /dependencies/precompiled/license/licenseCfg.json
+cd /dependencies/precompiled
+python -c "from gsnet import check_license; check_license('license')"
 ```
 
 ## Adding model weights
 
-Copy the detection and tracking model weights into `weights/detection` and `weights/tracking` folders respectively. These will be mounted into following folders inside the container. 
+Copy the detection and tracking model weights into `weights/detection` and `weights/tracking` folders respectively. These will be mounted into following folders inside the container.
 
 - `/dependencies/precompiled/weights/detection`             allows to run the ros2 packages
 - `/dependencies/precompiled/weights/tracking`              allows to run the ros2 packages
 
-This can also be done alongside the prior `Adding Licesne` step.
+This can also be done alongside the prior `Adding License` step.
 
 ## Basic testing
 

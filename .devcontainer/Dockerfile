@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04 AS base
+FROM nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04 AS base
 
 ## Set environment variables for CUDA and PyTorch
 ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6" 
@@ -44,7 +44,7 @@ RUN apt-get update && \
 ####        Install Pytoch and torchvision
 ############################################################################
 
-RUN python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu126
+RUN python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
 
 ############################################################################
 ####        Install MinkowskiEngine
@@ -57,7 +57,7 @@ WORKDIR /dependencies
 RUN git clone --recursive https://github.com/chenxi-wang/MinkowskiEngine.git
 
 WORKDIR /dependencies/MinkowskiEngine
-RUN git checkout cuda-12-1 && python setup.py install --blas=openblas --force_cuda
+RUN git checkout cuda-13 && python setup.py install --blas=openblas --force_cuda
 
 ############################################################################
 ####        Install GraspNET API
@@ -98,9 +98,8 @@ RUN python -m pip install "numpy<2.0" --no-cache-dir --no-build-isolation .
 WORKDIR /dependencies/precompiled
 
 # Move library files
-RUN cp /dependencies/anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled/gsnet.so
-RUN cp /dependencies/anygrasp_sdk/license_registration/lib_cxx_versions/lib_cxx.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled/lib_cxx.so
-RUN cp /dependencies/anygrasp_sdk/grasp_tracking/tracker_versions/tracker.cpython-312-x86_64-linux-gnu.so /dependencies/precompiled/tracker.so
+RUN cp /dependencies/anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-310-x86_64-linux-gnu.so /dependencies/precompiled/gsnet.so
+RUN cp /dependencies/anygrasp_sdk/grasp_tracking/tracker_versions/tracker.cpython-310-x86_64-linux-gnu.so /dependencies/precompiled/tracker.so
 
 # update python syspath
 ENV PYTHONPATH="${PYTHONPATH}:/dependencies/precompiled"
@@ -115,18 +114,18 @@ ENV PYTHONPATH="${PYTHONPATH}:/dependencies/precompiled"
 ## https://github.com/graspnet/anygrasp_sdk/issues/136 and until issue is 
 ## resolved, uses the following fix to install libcrypto.so.1.1
 
-WORKDIR /dependencies
-RUN wget https://www.openssl.org/source/openssl-1.1.1o.tar.gz && \
-    tar -zxvf openssl-1.1.1o.tar.gz
+# WORKDIR /dependencies
+# RUN wget https://www.openssl.org/source/openssl-1.1.1o.tar.gz && \
+#     tar -zxvf openssl-1.1.1o.tar.gz
 
-WORKDIR /dependencies/openssl-1.1.1o
-RUN ./config  && \
-    make  && \
-    make install  && \
-    find / -name libssl.so.1.1  && \
-    ln -s /usr/local/lib/libssl.so.1.1  /usr/lib/libssl.so.1.1 && \
-    find / -name libcrypto.so.1.1 && \
-    ln -s /usr/local/lib/libcrypto.so.1.1 /usr/lib/libcrypto.so.1.1
+# WORKDIR /dependencies/openssl-1.1.1o
+# RUN ./config  && \
+#     make  && \
+#     make install  && \
+#     find / -name libssl.so.1.1  && \
+#     ln -s /usr/local/lib/libssl.so.1.1  /usr/lib/libssl.so.1.1 && \
+#     find / -name libcrypto.so.1.1 && \
+#     ln -s /usr/local/lib/libcrypto.so.1.1 /usr/lib/libcrypto.so.1.1
 
 ############################################################################
 ####        Install ROS2 Humble and ROS development tools
