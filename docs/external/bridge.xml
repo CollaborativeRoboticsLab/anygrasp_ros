@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+    <!--
+      Host-side CycloneDDS template.
+
+      This is intended to be copied to a machine-local path and edited.
+      See docs/external/dds_configuration.md for how to fill these values
+      for the three supported scenarios.
+
+      Placeholders:
+        - THIS_MACHINE_IP: physical IP of *this* machine that other nodes can reach
+        - PEER_1_IP / PEER_2_IP: one or more peer addresses to bootstrap discovery
+
+      Notes:
+        - When using Docker bridge + published ports, ExternalNetworkAddress must be
+          a reachable host IP (not the container-internal IP).
+        - AllowMulticast is set to false to keep behavior consistent across Docker
+          and multi-host networks.
+    -->
+    <Domain id="76">
+        <General>
+            <ExternalNetworkAddress>THIS_MACHINE_IP</ExternalNetworkAddress>
+            <AllowMulticast>false</AllowMulticast>
+        </General>
+        <Discovery>
+            <Peers>
+                <Peer address="PEER_1_IP"/>
+                <!-- <Peer address="PEER_2_IP"/> -->
+                <!-- Second peer (uncomment if needed) -->
+                <!-- Multiple peers (uncomment and copy as needed) -->
+            </Peers>
+            <ParticipantIndex>auto</ParticipantIndex>
+        </Discovery>
+    </Domain>
+</CycloneDDS>

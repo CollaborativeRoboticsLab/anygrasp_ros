@@ -4,7 +4,9 @@
   "dockerFile": "Dockerfile",
   "remoteUser": "ubuntu",
   "containerEnv": {
-    "DISPLAY": "${localEnv:DISPLAY}"
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "CYCLONEDDS_URI": "/home/ubuntu/colcon_ws/src/anygrasp_ros/cyclonedds.xml",
+    "ROS_DOMAIN_ID": "76"
   },
   "runArgs": [
     "--privileged",

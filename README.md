@@ -2,16 +2,18 @@
 
 ROS 2 wrappers for AnyGrasp detection and tracking.
 
-The devcontainer is based on [pytorch/pytorch:2.10.0-cuda12.6-cudnn9-devel](https://hub.docker.com/layers/pytorch/pytorch/2.10.0-cuda12.6-cudnn9-devel/images/sha256-df80e10d07cd114c5f33380e3df7b6c5a3caab8481f68509ea652a7c0908316e) image and provides
-- Pytorch 2.9.1
+The devcontainer is based on [nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04](https://hub.docker.com/layers/nvidia/cuda/12.6.0-cudnn-devel-ubuntu22.04/images/sha256-3814ef2c9d46ca559e601374029a576596f016e33ddf48d6e2ad778d21bfa3f0) image and provides
+
+- Pytorch 2.10
 - CUDA 12.6
 - CUDNN9
-- ROS Jazzy (Base container is ubuntu 24.04)
+- ROS Humble (Base container is ubuntu 22.04)
 - [chenxi-wang/MinkowskiEngine](https://github.com/chenxi-wang/MinkowskiEngine.git)
 - [CollaborativeRoboticsLab/graspnetAPI](https://github.com/CollaborativeRoboticsLab/graspnetAPI.git)
 - [graspnet/anygrasp_sdk](https://github.com/graspnet/anygrasp_sdk.git)
+- [Realsense packages](https://github.com/realsenseai/realsense-ros)
 
-### Creating docker network
+## Creating docker network
 
 To have a stable feature id for the anygrasp license, we utilize built-in docker network `bridge` and a fixed mac address. For the dev container, this is represented by following config. Change the given mac address as required.
 
@@ -22,13 +24,19 @@ To have a stable feature id for the anygrasp license, we utilize built-in docker
   ]
 ```
 
-### Building container
+## Building container
 
 Install VSCode and add the [DevContainer addon](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
 
 Clone this repo and open using VSCode. Generally VScode should auto detect, if not press Shift+Ctrl+P to open the command palette and select "DevContainer: Rebuild and Reopen the container" option.
 
-### Adding license
+## Connecting to external ROS2 nodes
+
+Due to the usage of `network=bridge`, the devcontainer will not be able to communicate with other ROS2 nodes running on the host machine, other remote machines or other containers with default setting.
+
+We need to update the ROS2 DDS network configuration for all entities to make the anygrasp_ros2 container reachable. [Follow the instructions](./docs/external/dds_configuration.md) to setup the network configuration.
+
+## Adding license
 
 Once the Container is built, run the `license_checker` function from anygrasp_sdk and apply for the license following the steps from [here](https://github.com/graspnet/anygrasp_sdk/blob/main/license_registration/README.md). 
 
@@ -48,7 +56,7 @@ To check the license run following command
 /dependencies/anygrasp_sdk/license_registration/license_checker -c /dependencies/precompiled/license/licenseCfg.json
 ```
 
-### Adding model weights
+## Adding model weights
 
 Copy the detection and tracking model weights into `weights/detection` and `weights/tracking` folders respectively. These will be mounted into following folders inside the container. 
 
@@ -57,13 +65,22 @@ Copy the detection and tracking model weights into `weights/detection` and `weig
 
 This can also be done alongside the prior `Adding Licesne` step.
 
-### Basic testing
+## Basic testing
 
 Try running the `grasp_detection/demo.py` and `grasp_tracking/demo.py` to confirm the process pipeline is working.
 
+### Start the camera node
+
+Use the following command to start the camera node (realsense D435).
+
+```bash
+source install/setup.bash
+ros2 launch grasping_camera d435.launch.py
+```
+
 ### Starting the anygrasp detection system
 
-Use the following command to start the anygrasp system
+Use the following command to start the anygrasp detection system
 
 ```bash
 ros2 launch anygrasp_ros detection.launch.py
@@ -71,7 +88,7 @@ ros2 launch anygrasp_ros detection.launch.py
 
 ### Starting the anygrasp tracking system
 
-Use the following command to start the anygrasp system
+Use the following command to start the anygrasp tracking system
 
 ```bash
 ros2 launch anygrasp_ros tracking.launch.py
@@ -84,7 +101,12 @@ The nodes expose these services:
 - `/anygrasp/detection` using `anygrasp_msgs/srv/GetGrasps`
 - `/anygrasp/tracking` using `anygrasp_msgs/srv/GetGraspsTracked`
 
-Each service takes a `count` in the request. Detection returns `geometry_msgs/PoseStamped[]`; tracking returns `int64[] ids` aligned with `geometry_msgs/PoseStamped[]`, and accepts `input_ids` as a list to select specific tracked grasps or `[]` to update the active set. Each stamped pose copies the source pointcloud header, so the frame is explicit for downstream motion planning.
+Usage:
+
+- Each service takes a `count` in the request.
+- Detection returns `geometry_msgs/PoseStamped[]`  
+- Tracking returns `int64[] ids` aligned with `geometry_msgs/PoseStamped[]`, and accepts `input_ids` as a list to select specific tracked grasps or `[]` to update the active set.
+- Each stamped pose copies the source pointcloud header, so the frame is explicit for downstream motion planning.
 
 ## Visualization
 
@@ -97,7 +119,7 @@ Add either topic as a `MarkerArray` display in RViz to inspect grasp poses and I
 
 ## More information
 
-- [External container using network=host](./docs/external/container.md)
+- [External container using network=host](./docs/external/dds_configuration.md)
 - [Service Messages](./docs/usage_with_msgs.md)
 - [Grasp Detection](./docs/detection.md)
 - [Grasp Tracking](./docs/tracking.md)
