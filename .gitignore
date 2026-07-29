@@ -1,7 +1,7 @@
 /weights/detection/**
 /weights/tracking/**
 /license/**
-/cyclonedds.xml
+/bridge.xml
 __pycache__/**
 *.pyc
 *.pyo

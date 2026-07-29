@@ -64,6 +64,15 @@ cp /home/ubuntu/colcon_ws/src/anygrasp_ros/docs/external/bridge.xml /home/ubuntu
 
 For nodes that are *not* inside the AnyGrasp container, the right CycloneDDS config depends on whether those nodes are behind Docker NAT. Following are some common scenarios.
 
+Following scenarios assume that other nodes are running inside a devcontainer. If other nodes are running directly on the host machine, you can use the host.xml config and set `DEVICE_2_PHYSICAL_IP` to the host machine's IP address.
+
+and then when running a node or launch file, set the environment variable `CYCLONEDDS_URI` to point to the config file. For example:
+
+```bash
+export CYCLONEDDS_URI=file:///home/$USER/host.xml
+ros2 topic list
+```
+
 ## Scenario 1: Same physical host
 
 Nodes are on the same host machine.
@@ -91,6 +100,12 @@ If other nodes run with `network=bridge`, publish UDP `26400-26420` and use a `b
 
 - Set `THIS_MACHINE_IP` = `HOST_IP`
 - Set `PEER_1_IP` = `HOST_IP`
+
+Restart the containers after changing the CycloneDDS config. You can verify that the nodes see each other by running:
+
+```bash
+ros2 topic list
+```
 
 ## Scenario 2: Separate machines
 
@@ -122,6 +137,12 @@ If remote nodes run with `network=bridge`, publish UDP `26400-26420` on the remo
 - Ensure UDP `26400-26420` is reachable on the AnyGrasp machine.
   - Docker publishes the ports via `-p 26400-26420:26400-26420/udp`.
   - Host firewall (ufw/firewalld) must allow inbound UDP on that range.
+
+Restart the containers after changing the CycloneDDS config. You can verify that the nodes see each other by running:
+
+```bash
+ros2 topic list
+```
 
 ## Scenario 3: Mixed (local + remote nodes)
 
@@ -160,12 +181,8 @@ Use `host.xml` and set:
 
 - `DEVICE_2_PHYSICAL_IP` = `HOST_IP`
 
-## Test
-
-From each environment (host, AnyGrasp container, remote machine), run:
+Restart the containers after changing the CycloneDDS config. You can verify that the nodes see each other by running:
 
 ```bash
 ros2 topic list
 ```
-
-You should see the same topics (within the same `ROS_DOMAIN_ID`).

@@ -40,10 +40,7 @@ We need to update the ROS2 DDS network configuration for all entities to make th
 
 Once the Container is built, run the following command to get the `feature id` and apply for the license [following the steps](https://github.com/graspnet/anygrasp_sdk/blob/main/license_registration/README.md).
 
-Following commands will help to run the `license_checker` within the dev container.
-
 ```bash
-cd /dependencies/precompiled
 python -c "from gsnet import get_feature_id; print(get_feature_id())"
 ```
 
@@ -54,7 +51,6 @@ Once you fill the form and receive the license zip file, unzip and copy it to th
 To check the license run following command
 
 ```bash
-cd /dependencies/precompiled
 python -c "from gsnet import check_license; check_license('license')"
 ```
 
@@ -76,8 +72,7 @@ Try running the `grasp_detection/demo.py` and `grasp_tracking/demo.py` to confir
 Use the following command to start the camera node (realsense D435).
 
 ```bash
-source install/setup.bash
-ros2 launch grasping_camera d435.launch.py
+ros2 launch realsense2_camera rs_launch.py
 ```
 
 ### Starting the anygrasp detection system

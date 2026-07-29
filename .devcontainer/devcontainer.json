@@ -5,12 +5,14 @@
   "remoteUser": "ubuntu",
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
-    "CYCLONEDDS_URI": "/home/ubuntu/colcon_ws/src/anygrasp_ros/cyclonedds.xml",
-    "ROS_DOMAIN_ID": "76"
+    "ROS_DOMAIN_ID": "1",
+    "CYCLONEDDS_URI": "file:///home/ubuntu/colcon_ws/src/anygrasp_ros/bridge.xml"
   },
   "runArgs": [
     "--privileged",
-    "--network=bridge",
+    "--network=bridge",    
+    "-p",
+    "26400-26420:26400-26420/udp",
     "--mac-address=02:42:de:ad:be:ff",
     "--gpus",
     "all"

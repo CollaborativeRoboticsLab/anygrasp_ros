@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04 AS base
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04 AS base
 
 ## Set environment variables for CUDA and PyTorch
 ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 6.2 7.0 7.2 7.5 8.0 8.6" 
@@ -44,7 +44,7 @@ RUN apt-get update && \
 ####        Install Pytoch and torchvision
 ############################################################################
 
-RUN python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu130
+RUN python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128
 
 ############################################################################
 ####        Install MinkowskiEngine
@@ -57,7 +57,7 @@ WORKDIR /dependencies
 RUN git clone --recursive https://github.com/chenxi-wang/MinkowskiEngine.git
 
 WORKDIR /dependencies/MinkowskiEngine
-RUN git checkout cuda-13 && python setup.py install --blas=openblas --force_cuda
+RUN git checkout cuda-12-1 && python setup.py install --blas=openblas --force_cuda
 
 ############################################################################
 ####        Install GraspNET API
