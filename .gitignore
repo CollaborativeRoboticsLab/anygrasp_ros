@@ -1,6 +1,6 @@
-/weights/detection/**
-/weights/tracking/**
-/license/**
+# /weights/detection/**
+# /weights/tracking/**
+# /license/**
 /bridge.xml
 __pycache__/**
 *.pyc
