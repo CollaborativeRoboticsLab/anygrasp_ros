@@ -52,14 +52,6 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         arguments=['-d', rviz_config_path],
         condition=IfCondition(use_rviz),
-        # additional_env={
-        #     'LD_LIBRARY_PATH': ':'.join(
-        #         [
-        #             '/opt/ros/humble/opt/rviz_ogre_vendor/lib',
-        #             os.environ.get('LD_LIBRARY_PATH', ''),
-        #         ]
-        #     ),
-        # },
     )
 
     return LaunchDescription(

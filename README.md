@@ -51,6 +51,12 @@ Use the following command to start the anygrasp tracking system
 source install/setup.bash
 ros2 launch anygrasp_ros tracking.launch.py
 ```
+to trigger the tracking service, use the following command
+
+```bash
+source install/setup.bash
+ros2 service call /anygrasp/tracking anygrasp_msgs/srv/GetGraspsTracked "{count: 10, input_ids: []}"
+``` 
 
 ## Detailed Setup 
 
