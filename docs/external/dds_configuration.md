@@ -70,6 +70,7 @@ and then when running a node or launch file, set the environment variable `CYCLO
 
 ```bash
 export CYCLONEDDS_URI=file:///home/$USER/host.xml
+export ROS_DOMAIN_ID=76
 ros2 topic list
 ```
 

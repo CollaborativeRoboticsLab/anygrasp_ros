@@ -1,16 +1,15 @@
 # Anygrasp pipeline testing
 
+We need to use `sudo` with python3 because the internal file `.TimeRecord` cannot be created otherwise. Since this is run inside a devcontainer, it should be alright.
+
 Try running following scripts to test the anygrasp installation.
+
+## Grasp detection
 
 ```bash
 cd /dependencies/anygrasp_sdk/grasp_detection
 sudo python3 demo.py --checkpoint_path /dependencies/precompiled/weights/detection/checkpoint_detection.tar
-
-cd /dependencies/anygrasp_sdk/grasp_tracking
-sudo python3 demo.py --checkpoint_path /dependencies/precompiled/weights/tracking/checkpoint_tracking.tar
 ```
-
-We need to use `sudo` with python3 because the internal file `.TimeRecord` cannot be created otherwise. Since this is run inside a devcontainer, it should be alright.
 
 Expected outputs
 
@@ -26,7 +25,17 @@ WARNING:root:autolab_core not installed as catkin package, RigidTransform ros me
  0.23129246 0.22511464 0.2155883  0.20436358 0.20320499 0.18320534
  0.17407149 0.17206314]
 grasp score: 0.6406741142272949
+```
 
+## Grasp tracking
+
+```bash
+cd /dependencies/anygrasp_sdk/grasp_tracking
+sudo python3 demo.py --checkpoint_path /dependencies/precompiled/weights/tracking/checkpoint_tracking.tar
+```
+Expected outputs
+
+```bash
 # for grasp_tracking
 license passed: True, state: FvrLicenseState.PASSED
 error: XDG_RUNTIME_DIR is invalid or not set in the environment.

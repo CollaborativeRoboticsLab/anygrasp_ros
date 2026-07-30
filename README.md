@@ -43,7 +43,9 @@ Use the following command to start the anygrasp tracking system
 ros2 launch anygrasp_ros tracking.launch.py
 ```
 
-## Creating docker network
+## Detailed Setup 
+
+### Creating docker network
 
 To have a stable feature id for the anygrasp license, we utilize built-in docker network `bridge` and a fixed mac address. For the dev container, this is represented by following config. Change the given mac address as required.
 
@@ -54,19 +56,19 @@ To have a stable feature id for the anygrasp license, we utilize built-in docker
   ]
 ```
 
-## Building container
+### Building container
 
 Install VSCode and add the [DevContainer addon](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
 
 Clone this repo and open using VSCode. Generally VScode should auto detect, if not press Shift+Ctrl+P to open the command palette and select "DevContainer: Rebuild and Reopen the container" option.
 
-## Connecting to external ROS2 nodes
+### Connecting to external ROS2 nodes
 
 Due to the usage of `network=bridge`, the devcontainer will not be able to communicate with other ROS2 nodes running on the host machine, other remote machines or other containers with default setting.
 
 We need to update the ROS2 DDS network configuration for all entities to make the anygrasp_ros2 container reachable. [Follow the instructions](./docs/external/dds_configuration.md) to setup the network configuration.
 
-## Adding license
+### Adding license
 
 Once the Container is built, run the following command to get the `feature id` and apply for the license [following the steps](https://github.com/graspnet/anygrasp_sdk/blob/main/license_registration/README.md).
 
@@ -81,7 +83,7 @@ Once you fill the form and receive the license zip file, unzip and copy it to th
 To check the license run following command
 
 ```bash
-python -c "from gsnet import check_license; check_license('license')"
+python -c "from gsnet import check_license; check_license('/dependencies/precompiled/license')"
 ```
 
 ## Adding model weights
@@ -99,7 +101,7 @@ Current container supports the realsense D435 camera. Follow the instructions in
 
 ## Basic testing
 
-Try running the `grasp_detection/demo.py` and `grasp_tracking/demo.py` to confirm the process pipeline is working.
+Try running the `grasp_detection/demo.py` and `grasp_tracking/demo.py` to confirm the process pipeline is working as explained in [Testing](./docs/testing.md). The demo scripts will run the detection and tracking pipeline on a sample pointcloud and print the detected grasp poses and scores.
 
 ## Services
 
