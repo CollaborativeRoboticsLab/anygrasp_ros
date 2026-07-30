@@ -20,6 +20,12 @@ from geometry_msgs.msg import Pose, PoseStamped
 from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGrasps
+from anygrasp_ros.node_utils import (
+    create_grasp_markers,
+    get_precompiled_module_path,
+    log_anygrasp_license_status,
+    rotation_matrix_to_quaternion,
+)
 
 
 def _load_gsnet_module():
@@ -45,13 +51,6 @@ def _load_gsnet_module():
 
 
 GSNET_MODULE = _load_gsnet_module()
-
-from anygrasp_ros.node_utils import (
-    create_grasp_markers,
-    get_precompiled_module_path,
-    rotation_matrix_to_quaternion,
-)
-
 
 class AnyGraspDetectionNode(Node):
     def __init__(self) -> None:
@@ -79,6 +78,11 @@ class AnyGraspDetectionNode(Node):
 
         # Initialize AnyGrasp
         self._anygrasp = self._init_anygrasp()
+        log_anygrasp_license_status(
+            logger=self.get_logger(),
+            module=GSNET_MODULE,
+            module_name='gsnet.so',
+        )
 
         self._marker_pub = self.create_publisher(MarkerArray, self._params.marker_topic, 10)
 
@@ -344,7 +348,8 @@ def main(args=None) -> None:
         rclpy.spin(node)
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

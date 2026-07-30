@@ -29,6 +29,30 @@ def get_precompiled_module_path(module_name: str) -> str:
 	return os.path.join(module_root, module_name)
 
 
+def log_anygrasp_license_status(*, logger, module, module_name: str) -> None:
+	"""Log AnyGrasp license status when the module exposes a check hook."""
+	if not hasattr(module, 'check_license'):
+		return
+
+	license_dir = os.environ.get(
+		'ANYGRASP_LICENSE_PATH',
+		os.path.join(os.path.dirname(get_precompiled_module_path(module_name)), 'license'),
+	)
+
+	try:
+		result = module.check_license(license_dir)
+	except Exception as exc:
+		logger.warn(f'License check failed: {exc}')
+		return
+
+	if isinstance(result, tuple) and len(result) >= 2:
+		passed, state = result[0], result[1]
+		logger.info(f'License passed: {passed}, state: {state}')
+		return
+
+	logger.info(f'License check completed for {license_dir}')
+
+
 def rotation_matrix_to_quaternion(matrix: np.ndarray) -> Tuple[float, float, float, float]:
 	"""Convert a 3x3 rotation matrix to (x, y, z, w) quaternion."""
 

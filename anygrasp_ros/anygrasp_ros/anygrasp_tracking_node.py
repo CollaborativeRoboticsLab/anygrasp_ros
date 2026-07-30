@@ -19,13 +19,18 @@ from geometry_msgs.msg import Pose, PoseStamped
 from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGraspsTracked
+from anygrasp_ros.node_utils import (
+    create_grasp_markers,
+    get_precompiled_module_path,
+    log_anygrasp_license_status,
+    rotation_matrix_to_quaternion,
+)
 
-
-def _load_anygrasp_tracker_class():
-    """Load AnyGraspTracker with fallback to the precompiled extension path."""
+def _load_tracker_module():
+    """Load tracker module with fallback to the known precompiled extension path."""
     try:
-        from tracker import AnyGraspTracker as cls  # type: ignore
-        return cls
+        import tracker as module  # type: ignore
+        return module
     except Exception:
         module_path = get_precompiled_module_path('tracker.so')
         if not os.path.isfile(module_path):
@@ -39,19 +44,10 @@ def _load_anygrasp_tracker_class():
         module = importlib.util.module_from_spec(spec)
         sys.modules['tracker'] = module
         spec.loader.exec_module(module)
-        if not hasattr(module, 'AnyGraspTracker'):
-            raise ImportError('tracker module loaded, but AnyGraspTracker symbol was not found.')
-        return module.AnyGraspTracker
+        return module
 
 
-AnyGraspTracker = _load_anygrasp_tracker_class()
-
-from anygrasp_ros.node_utils import (
-    create_grasp_markers,
-    get_precompiled_module_path,
-    rotation_matrix_to_quaternion,
-)
-
+TRACKER_MODULE = _load_tracker_module()
 
 class AnyGraspTrackingNode(Node):
     def __init__(self) -> None:
@@ -77,6 +73,11 @@ class AnyGraspTrackingNode(Node):
 
         # Initialize AnyGrasp tracker
         self._tracker = self._init_tracker()
+        log_anygrasp_license_status(
+            logger=self.get_logger(),
+            module=TRACKER_MODULE,
+            module_name='tracker.so',
+        )
         self._grasp_ids: List[int] = []
 
         self._marker_pub = self.create_publisher(MarkerArray, self._params.marker_topic, 10)
@@ -114,8 +115,12 @@ class AnyGraspTrackingNode(Node):
             debug=False,
         )
 
-        tracker = AnyGraspTracker(cfg)
-        tracker.load_net()
+        if not hasattr(TRACKER_MODULE, 'create_tracker'):
+            raise ImportError('tracker module does not expose create_tracker API.')
+
+        tracker = TRACKER_MODULE.create_tracker(cfg)
+        if tracker is None:
+            raise RuntimeError('tracker.create_tracker returned None')
         return tracker
 
     def _on_pointcloud(self, msg: PointCloud2) -> None:
@@ -269,8 +274,11 @@ class AnyGraspTrackingNode(Node):
             stamped_poses: List[PoseStamped] = []
             # If no grasp IDs yet, run detection first to initialize
             if len(self._grasp_ids) == 0:
-                # First detection
-                curr_gg, _cloud = self._tracker.get_grasp(points, colors)
+                _target_gg, curr_gg, _target_grasp_ids, _corres_preds = self._tracker.update(
+                    points,
+                    colors,
+                    [0],
+                )
 
                 if len(curr_gg) == 0:
                     self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
@@ -325,8 +333,12 @@ class AnyGraspTrackingNode(Node):
                 else:
                     tracked_ids = list(self._grasp_ids)
 
-                gg = self._tracker.track_grasps(points, colors, tracked_ids)
-                surviving_ids = tracked_ids[: len(gg)]
+                gg, _curr_gg, target_grasp_ids, _corres_preds = self._tracker.update(
+                    points,
+                    colors,
+                    tracked_ids,
+                )
+                surviving_ids = [int(grasp_id) for grasp_id in list(target_grasp_ids)]
 
                 if requested_ids:
                     lost_ids = set(tracked_ids) - set(surviving_ids)
@@ -335,10 +347,11 @@ class AnyGraspTrackingNode(Node):
                 else:
                     self._grasp_ids = list(surviving_ids)
 
-                result_ids = surviving_ids[:target_count]
+                count = min(target_count, len(surviving_ids), len(gg))
+                result_ids = surviving_ids[:count]
                 poses = [
                     self._grasp_to_pose(gg.translations[i], gg.rotation_matrices[i])
-                    for i in range(len(result_ids))
+                    for i in range(count)
                 ]
                 stamped_poses = [self._pose_to_stamped(pose, pointcloud.header) for pose in poses]
 
@@ -393,7 +406,8 @@ def main(args=None) -> None:
         rclpy.spin(node)
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
