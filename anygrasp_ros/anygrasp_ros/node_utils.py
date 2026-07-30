@@ -91,30 +91,28 @@ def get_point_cloud_intrinsics(
 	"""Select intrinsics for depth->3D projection.
 
 	Preference order:
-	1) depth CameraInfo (if enabled and received)
-	2) color CameraInfo (if enabled and received)
+	1) depth CameraInfo (if enabled and available)
+	2) color CameraInfo (if enabled and available)
 	3) parameter intrinsics
 	"""
 
 	if use_depth_camera_info_topic and depth_camera_info_topic_name:
-		if depth_intrinsics is None:
-			raise RuntimeError(f'Waiting for CameraInfo on {depth_camera_info_topic_name}')
-		return (
-			float(depth_intrinsics.fx),
-			float(depth_intrinsics.fy),
-			float(depth_intrinsics.cx),
-			float(depth_intrinsics.cy),
-		)
+		if depth_intrinsics is not None:
+			return (
+				float(depth_intrinsics.fx),
+				float(depth_intrinsics.fy),
+				float(depth_intrinsics.cx),
+				float(depth_intrinsics.cy),
+			)
 
 	if use_color_camera_info_topic and color_camera_info_topic_name:
-		if color_intrinsics is None:
-			raise RuntimeError(f'Waiting for CameraInfo on {color_camera_info_topic_name}')
-		return (
-			float(color_intrinsics.fx),
-			float(color_intrinsics.fy),
-			float(color_intrinsics.cx),
-			float(color_intrinsics.cy),
-		)
+		if color_intrinsics is not None:
+			return (
+				float(color_intrinsics.fx),
+				float(color_intrinsics.fy),
+				float(color_intrinsics.cx),
+				float(color_intrinsics.cy),
+			)
 
 	return float(fx), float(fy), float(cx), float(cy)
 

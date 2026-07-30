@@ -24,6 +24,7 @@ The devcontainer is based on [nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04](https:
 Use the following command to start the camera node (realsense D435).
 
 ```bash
+source install/setup.bash
 ros2 launch anygrasp_realsense d435.launch.py
 ```
 
@@ -32,14 +33,22 @@ ros2 launch anygrasp_realsense d435.launch.py
 Use the following command to start the anygrasp detection system
 
 ```bash
+source install/setup.bash
 ros2 launch anygrasp_ros detection.launch.py
 ```
+to trigger the detection service, use the following command
+
+```bash
+source install/setup.bash
+ros2 service call /anygrasp/detection anygrasp_msgs/srv/GetGrasps "{count: 10}"
+``` 
 
 ### Starting the anygrasp tracking system
 
 Use the following command to start the anygrasp tracking system
 
 ```bash
+source install/setup.bash
 ros2 launch anygrasp_ros tracking.launch.py
 ```
 

@@ -6,6 +6,9 @@ import rclpy
 from rclpy.node import Node
 
 import threading
+import importlib.util
+import os
+import sys
 from types import SimpleNamespace
 from typing import List, Optional
 
@@ -16,7 +19,32 @@ from geometry_msgs.msg import Pose, PoseStamped
 from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGraspsTracked
-from tracker import AnyGraspTracker  # type: ignore
+
+
+def _load_anygrasp_tracker_class():
+    """Load AnyGraspTracker with fallback to the precompiled extension path."""
+    try:
+        from tracker import AnyGraspTracker as cls  # type: ignore
+        return cls
+    except Exception:
+        module_path = '/dependencies/precompiled/tracker.so'
+        if not os.path.isfile(module_path):
+            raise
+
+        sys.modules.pop('tracker', None)
+        spec = importlib.util.spec_from_file_location('tracker', module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f'Unable to create import spec for {module_path}')
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules['tracker'] = module
+        spec.loader.exec_module(module)
+        if not hasattr(module, 'AnyGraspTracker'):
+            raise ImportError('tracker module loaded, but AnyGraspTracker symbol was not found.')
+        return module.AnyGraspTracker
+
+
+AnyGraspTracker = _load_anygrasp_tracker_class()
 
 from anygrasp_ros.node_utils import create_grasp_markers, rotation_matrix_to_quaternion
 

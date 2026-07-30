@@ -30,16 +30,6 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-###################################################################################################
-####       Fallback to numpy 1.x version
-###################################################################################################
-
-## Fix for ImportError: A module that was compiled using NumPy 1.x cannot be run in NumPy 2.0.0 as 
-##         it may crash. To support both 1.x and 2.x versions of NumPy, modules must be compiled 
-##         with NumPy 2.0. Some module may need to rebuild instead e.g. with 'pybind11>=2.12'.
-
-# RUN python -m pip uninstall -y numpy 
-
 ############################################################################
 ####        Install Pytoch and torchvision
 ############################################################################
@@ -105,29 +95,6 @@ RUN cp /dependencies/anygrasp_sdk/grasp_tracking/tracker_versions/tracker.cpytho
 ENV PYTHONPATH="${PYTHONPATH}:/dependencies/precompiled"
 
 ############################################################################
-####        Fix missing OpenSSL 1.1 / libcrypto.so.1.1
-############################################################################
-
-## Ubuntu 24.04 has moved from OpenSSL 1.1 (libcrypto.so.1.1) to OpenSSL 3
-## (libcrypto.so.3). But the ./license_checker needs libcrypto.so.1.1 to run, 
-## resulting in a lib missing runtime error. This has been reported at 
-## https://github.com/graspnet/anygrasp_sdk/issues/136 and until issue is 
-## resolved, uses the following fix to install libcrypto.so.1.1
-
-# WORKDIR /dependencies
-# RUN wget https://www.openssl.org/source/openssl-1.1.1o.tar.gz && \
-#     tar -zxvf openssl-1.1.1o.tar.gz
-
-# WORKDIR /dependencies/openssl-1.1.1o
-# RUN ./config  && \
-#     make  && \
-#     make install  && \
-#     find / -name libssl.so.1.1  && \
-#     ln -s /usr/local/lib/libssl.so.1.1  /usr/lib/libssl.so.1.1 && \
-#     find / -name libcrypto.so.1.1 && \
-#     ln -s /usr/local/lib/libcrypto.so.1.1 /usr/lib/libcrypto.so.1.1
-
-############################################################################
 ####        Install ROS2 Humble and ROS development tools
 ############################################################################
 
@@ -174,6 +141,7 @@ RUN apt-get update && \
     apt-get install --no-install-recommends -y \
     ros-${ROS_DISTRO}-ros-base \
     ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+    ros-${ROS_DISTRO}-rviz2 \
     ros-dev-tools  \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

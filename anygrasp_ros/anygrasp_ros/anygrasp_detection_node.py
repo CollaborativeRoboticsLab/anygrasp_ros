@@ -6,6 +6,10 @@ import rclpy
 from rclpy.node import Node
 
 import threading
+import importlib.util
+import os
+import sys
+import time
 from types import SimpleNamespace
 from typing import Optional
 
@@ -16,7 +20,31 @@ from geometry_msgs.msg import Pose, PoseStamped
 from visualization_msgs.msg import MarkerArray
 
 from anygrasp_msgs.srv import GetGrasps
-from gsnet import AnyGrasp
+
+
+def _load_gsnet_module():
+    """Load gsnet module with a fallback to the known precompiled extension path."""
+    try:
+        import gsnet as module  # type: ignore
+        return module
+    except Exception:
+        # Recover from partially initialized or shadowed gsnet imports.
+        module_path = '/dependencies/precompiled/gsnet.so'
+        if not os.path.isfile(module_path):
+            raise
+
+        sys.modules.pop('gsnet', None)
+        spec = importlib.util.spec_from_file_location('gsnet', module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f'Unable to create import spec for {module_path}')
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules['gsnet'] = module
+        spec.loader.exec_module(module)
+        return module
+
+
+GSNET_MODULE = _load_gsnet_module()
 
 from anygrasp_ros.node_utils import create_grasp_markers, rotation_matrix_to_quaternion
 
@@ -40,6 +68,7 @@ class AnyGraspDetectionNode(Node):
         self._lock = threading.Lock()
         self._params = SimpleNamespace()
         self._load_parameters()
+        self._detector_api = 'unknown'
 
         # Cache latest pointcloud
         self._latest_pointcloud: Optional[PointCloud2] = None
@@ -88,9 +117,23 @@ class AnyGraspDetectionNode(Node):
             debug=False,
         )
 
-        anygrasp = AnyGrasp(cfg)
-        anygrasp.load_net()
-        return anygrasp
+        if hasattr(GSNET_MODULE, 'AnyGrasp'):
+            anygrasp = GSNET_MODULE.AnyGrasp(cfg)
+            if hasattr(anygrasp, 'load_net'):
+                anygrasp.load_net()
+            self._detector_api = 'legacy_anygrasp'
+            self.get_logger().info('Using legacy AnyGrasp API from gsnet.AnyGrasp')
+            return anygrasp
+
+        if hasattr(GSNET_MODULE, 'create_detector'):
+            detector = GSNET_MODULE.create_detector(cfg)
+            if detector is None:
+                raise RuntimeError('gsnet.create_detector returned None')
+            self._detector_api = 'create_detector'
+            self.get_logger().info('Using create_detector API from gsnet module')
+            return detector
+
+        raise ImportError('gsnet module does not expose AnyGrasp or create_detector APIs.')
 
     def _on_pointcloud(self, msg: PointCloud2) -> None:
         """Store the latest pointcloud."""
@@ -149,8 +192,12 @@ class AnyGraspDetectionNode(Node):
 
     def _on_detection(self, request: GetGrasps.Request, response: GetGrasps.Response) -> GetGrasps.Response:
         """Handle detection service request."""
+        start_time = time.perf_counter()
         requested_count = int(request.count)
         target_count = 1 if requested_count <= 0 else requested_count
+        self.get_logger().info(
+            f'Detection request received: count={requested_count}, target_count={target_count}'
+        )
 
         # Get latest pointcloud
         with self._lock:
@@ -161,7 +208,7 @@ class AnyGraspDetectionNode(Node):
             response.success = False
             response.message = 'No pointcloud received yet.'
             response.poses = []
-            return response
+            return self._log_detection_response(response, start_time)
 
         # Convert PointCloud2 to arrays
         points, colors = self._pointcloud2_to_arrays(pointcloud)
@@ -171,33 +218,54 @@ class AnyGraspDetectionNode(Node):
             response.success = False
             response.message = 'Invalid or empty pointcloud.'
             response.poses = []
-            return response
+            return self._log_detection_response(response, start_time)
+
+        self.get_logger().info(
+            f'Detection input ready: frame={pointcloud.header.frame_id}, points={len(points)}'
+        )
 
         lims = list(self._params.lims)
 
         # Run AnyGrasp detection
         try:
-            gg, _cloud = self._anygrasp.get_grasp(
-                points,
-                colors,
-                lims=lims,
-                apply_object_mask=bool(self._params.apply_object_mask),
-                dense_grasp=bool(self._params.dense_grasp),
-                collision_detection=bool(self._params.collision_detection),
-            )
+            if self._detector_api == 'legacy_anygrasp':
+                gg, _cloud = self._anygrasp.get_grasp(
+                    points,
+                    colors,
+                    lims=lims,
+                    apply_object_mask=bool(self._params.apply_object_mask),
+                    dense_grasp=bool(self._params.dense_grasp),
+                    collision_detection=bool(self._params.collision_detection),
+                )
+            else:
+                workspace_mask = (
+                    (points[:, 0] >= lims[0])
+                    & (points[:, 0] <= lims[1])
+                    & (points[:, 1] >= lims[2])
+                    & (points[:, 1] <= lims[3])
+                    & (points[:, 2] >= lims[4])
+                    & (points[:, 2] <= lims[5])
+                )
+                optional_params = {
+                    'dense_grasp': bool(self._params.dense_grasp),
+                    'collision_detection': bool(self._params.collision_detection),
+                    'region_steering': workspace_mask,
+                }
+                gg = self._anygrasp.get_grasp(points, optional_params)
+                _cloud = None
         except Exception as exc:
             self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
             response.message = f'AnyGrasp inference failed: {exc}'
             response.poses = []
-            return response
+            return self._log_detection_response(response, start_time)
 
         if len(gg) == 0:
             self._publish_grasp_markers([], pointcloud.header.frame_id, pointcloud.header.stamp)
             response.success = False
             response.message = 'No grasps detected.'
             response.poses = []
-            return response
+            return self._log_detection_response(response, start_time)
 
         try:
             gg = gg.nms().sort_by_score()
@@ -234,6 +302,21 @@ class AnyGraspDetectionNode(Node):
         response.poses = stamped_poses
         response.message = f'Returned {count} grasp pose(s).'
         self._publish_grasp_markers(poses, pointcloud.header.frame_id, pointcloud.header.stamp)
+        self._log_detection_response(response, start_time)
+        return response
+
+    def _log_detection_response(
+        self,
+        response: GetGrasps.Response,
+        start_time: float,
+    ) -> GetGrasps.Response:
+        """Log detection service response summary before returning it."""
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        pose_count = len(response.poses)
+        self.get_logger().info(
+            f'Detection response sent: success={response.success}, poses={pose_count}, '
+            f'elapsed_ms={elapsed_ms:.1f}, message="{response.message}"'
+        )
         return response
 
     def _publish_grasp_markers(self, poses: list[Pose], frame_id: str, stamp) -> None:

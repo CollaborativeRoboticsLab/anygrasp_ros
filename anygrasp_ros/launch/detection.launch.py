@@ -4,6 +4,7 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+import os
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -13,6 +14,10 @@ def generate_launch_description() -> LaunchDescription:
     rviz_config_path = PathJoinSubstitution([pkg_share, 'config', 'anygrasp.rviz'])
 
     use_rviz = LaunchConfiguration('use_rviz')
+    rgb_image_topic = LaunchConfiguration('rgb_image_topic')
+    depth_image_topic = LaunchConfiguration('depth_image_topic')
+    color_camera_info_topic_name = LaunchConfiguration('color_camera_info_topic_name')
+    depth_camera_info_topic_name = LaunchConfiguration('depth_camera_info_topic_name')
 
     # RGBD node - handles RGB/depth to pointcloud conversion
     rgbd_node = Node(
@@ -20,7 +25,15 @@ def generate_launch_description() -> LaunchDescription:
         executable='rgbd_to_pointcloud_node',
         name='rgbd_to_pointcloud_node',
         output='screen',
-        parameters=[config_path],
+        parameters=[
+            config_path,
+            {
+                'rgb_image_topic': rgb_image_topic,
+                'depth_image_topic': depth_image_topic,
+                'color_camera_info_topic_name': color_camera_info_topic_name,
+                'depth_camera_info_topic_name': depth_camera_info_topic_name,
+            },
+        ],
     )
 
     # Detection node - consumes pointcloud from RGBD node
@@ -39,11 +52,27 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         arguments=['-d', rviz_config_path],
         condition=IfCondition(use_rviz),
+        # additional_env={
+        #     'LD_LIBRARY_PATH': ':'.join(
+        #         [
+        #             '/opt/ros/humble/opt/rviz_ogre_vendor/lib',
+        #             os.environ.get('LD_LIBRARY_PATH', ''),
+        #         ]
+        #     ),
+        # },
     )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument('use_rviz', default_value='true'),
+            DeclareLaunchArgument('rgb_image_topic', default_value='/camera/color/image_raw'),
+            DeclareLaunchArgument('depth_image_topic', default_value='/camera/depth/image_rect_raw'),
+            DeclareLaunchArgument(
+                'color_camera_info_topic_name', default_value='/camera/color/camera_info'
+            ),
+            DeclareLaunchArgument(
+                'depth_camera_info_topic_name', default_value='/camera/depth/camera_info'
+            ),
             rgbd_node,
             detection_node,
             rviz_node,

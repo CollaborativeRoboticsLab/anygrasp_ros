@@ -145,12 +145,6 @@ def launch_setup(context, params, param_name_suffix=''):
     node_action = launch_ros.actions.LifecycleNode if use_lifecycle_node else launch_ros.actions.Node
     log_message = "Launching as LifecycleNode" if use_lifecycle_node else "Launching as Normal ROS Node"
 
-    if(os.getenv('ROS_DISTRO') == 'foxy'):
-        # Foxy doesn't support output as substitution object (LaunchConfiguration object)
-        # but supports it as string, so we fetch the string from this substitution object
-        # see related PR that was merged for humble, iron, rolling: https://github.com/ros2/launch/pull/577
-        _output = context.perform_substitution(_output)
-
     return [
         LogInfo(msg=f"🚀 {log_message}"),
         node_action(
