@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from types import SimpleNamespace
 from typing import Optional, Sequence, Tuple
 
@@ -19,6 +21,12 @@ except Exception:  # pragma: no cover
 	Pose = object  # type: ignore
 	Marker = object  # type: ignore
 	MarkerArray = object  # type: ignore
+
+
+def get_precompiled_module_path(module_name: str) -> str:
+	"""Return the configured path for a precompiled AnyGrasp extension module."""
+	module_root = os.environ.get('ANYGRASP_PATH', '/dependencies/precompiled')
+	return os.path.join(module_root, module_name)
 
 
 def rotation_matrix_to_quaternion(matrix: np.ndarray) -> Tuple[float, float, float, float]:

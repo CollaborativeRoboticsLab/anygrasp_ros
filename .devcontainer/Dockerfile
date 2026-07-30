@@ -91,8 +91,10 @@ WORKDIR /dependencies/precompiled
 RUN cp /dependencies/anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-310-x86_64-linux-gnu.so /dependencies/precompiled/gsnet.so
 RUN cp /dependencies/anygrasp_sdk/grasp_tracking/tracker_versions/tracker.cpython-310-x86_64-linux-gnu.so /dependencies/precompiled/tracker.so
 
-# update python syspath
-ENV PYTHONPATH="${PYTHONPATH}:/dependencies/precompiled"
+# expose the precompiled module directory to both Python imports and explicit fallbacks
+ENV ANYGRASP_PATH=/dependencies/precompiled
+ENV PYTHONPATH="${PYTHONPATH}:${ANYGRASP_PATH}"
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${ANYGRASP_PATH}"
 
 ############################################################################
 ####        Install ROS2 Humble and ROS development tools

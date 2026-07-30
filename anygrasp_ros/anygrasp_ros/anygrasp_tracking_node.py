@@ -27,7 +27,7 @@ def _load_anygrasp_tracker_class():
         from tracker import AnyGraspTracker as cls  # type: ignore
         return cls
     except Exception:
-        module_path = '/dependencies/precompiled/tracker.so'
+        module_path = get_precompiled_module_path('tracker.so')
         if not os.path.isfile(module_path):
             raise
 
@@ -46,7 +46,11 @@ def _load_anygrasp_tracker_class():
 
 AnyGraspTracker = _load_anygrasp_tracker_class()
 
-from anygrasp_ros.node_utils import create_grasp_markers, rotation_matrix_to_quaternion
+from anygrasp_ros.node_utils import (
+    create_grasp_markers,
+    get_precompiled_module_path,
+    rotation_matrix_to_quaternion,
+)
 
 
 class AnyGraspTrackingNode(Node):

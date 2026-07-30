@@ -29,7 +29,7 @@ def _load_gsnet_module():
         return module
     except Exception:
         # Recover from partially initialized or shadowed gsnet imports.
-        module_path = '/dependencies/precompiled/gsnet.so'
+        module_path = get_precompiled_module_path('gsnet.so')
         if not os.path.isfile(module_path):
             raise
 
@@ -46,7 +46,11 @@ def _load_gsnet_module():
 
 GSNET_MODULE = _load_gsnet_module()
 
-from anygrasp_ros.node_utils import create_grasp_markers, rotation_matrix_to_quaternion
+from anygrasp_ros.node_utils import (
+    create_grasp_markers,
+    get_precompiled_module_path,
+    rotation_matrix_to_quaternion,
+)
 
 
 class AnyGraspDetectionNode(Node):
