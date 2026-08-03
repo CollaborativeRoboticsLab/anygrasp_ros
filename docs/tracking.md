@@ -82,6 +82,8 @@ The `anygrasp_tracking_node` performs inference on a PointCloud2 and tracks gras
 
 ### Launch
 
+This checkout does not currently include a ROS package named `anygrasp_ros` with `tracking.launch.py`. Add or restore that package before using this command.
+
 ```bash
 ros2 launch anygrasp_ros tracking.launch.py
 ```

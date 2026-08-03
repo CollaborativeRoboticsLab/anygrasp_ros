@@ -185,6 +185,8 @@ Used when TF query fails and `align_depth_to_color=true`. These are NOT typical 
 
 ### Basic Launch
 
+This checkout does not currently include a ROS package named `anygrasp_ros` with `rgbd.launch.py`. Add or restore that package before using this command.
+
 ```bash
 ros2 launch anygrasp_ros rgbd.launch.py
 ```

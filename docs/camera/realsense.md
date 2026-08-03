@@ -6,7 +6,7 @@ We have configured the devcontainer to install the drivers required during the b
 
 ## Configuration and Customization
 
-We are using a `D435` camera in our system and the configurations we provide in [d435.launch.py](./../../grasping_camera/launch/d435.launch.py) match that.
+We are using a `D435` camera in our system and the configurations we provide in [d435.launch.py](../../anygrasp_realsense/launch/d435.launch.py) match that.
 
 To introduce a different Realsense camera model, create a separate launch file and change the parameters accordingly.
 
@@ -53,7 +53,7 @@ Use the following command to start the camera
 
 ```bash
 source install/setup.bash
-ros2 launch grasping_camera d435.launch.py
+ros2 launch anygrasp_realsense d435.launch.py
 ```
 
 ## Troubleshooting

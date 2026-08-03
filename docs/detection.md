@@ -81,6 +81,8 @@ The node maintains a cache of the latest point cloud for service requests.
 
 ### Launch
 
+This checkout does not currently include a ROS package named `anygrasp_ros` with `detection.launch.py`. Add or restore that package before using this command.
+
 ```bash
 ros2 launch anygrasp_ros detection.launch.py
 ```
