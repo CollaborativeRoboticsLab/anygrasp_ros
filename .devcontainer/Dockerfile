@@ -195,7 +195,7 @@ RUN mkdir -p /home/ubuntu/colcon_ws/src /home/ubuntu/colcon_ws/build /home/ubunt
 # Switch from root to user
 USER $USERNAME
 
-# Source the ROS setup file
+# Source the ROS setup file,
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> ~/.bashrc
 
 # make sure folders exist
