@@ -1,0 +1,22 @@
+# Maximum number of grasp poses to return.
+int64 count
+
+# Detection metadata from the selected 2D object hypothesis.
+# Use -1 for detection_id or class_id when unavailable.
+int64 detection_id
+int16 class_id
+string class_name
+
+# Bounding box in pixel coordinates.
+int16 bbx_center_x
+int16 bbx_center_y
+int16 bbx_size_w
+int16 bbx_size_h
+
+# Source image size used when the bbox was selected.
+int32 image_width
+int32 image_height
+---
+geometry_msgs/PoseStamped[] poses
+bool success
+string message
