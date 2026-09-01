@@ -42,7 +42,12 @@ def generate_launch_description() -> LaunchDescription:
         executable='anygrasp_detection_node',
         name='anygrasp_detection_node',
         output='screen',
-        parameters=[config_path],
+        parameters=[
+            config_path,
+            {
+                'color_camera_info_topic_name': color_camera_info_topic_name,
+            },
+        ],
     )
 
     rviz_node = Node(

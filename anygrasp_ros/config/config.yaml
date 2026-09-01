@@ -18,6 +18,14 @@ anygrasp_detection_node:
     # Subscribe to pointcloud from rgbd_to_pointcloud_node
     input_pointcloud: '/pointcloud'
 
+    # Camera intrinsics for 2D bbox reprojection in filtered grasp queries
+    use_color_camera_info_topic: true
+    color_camera_info_topic_name: '/camera/color/camera_info'
+    fx: 927.17
+    fy: 927.37
+    cx: 651.32
+    cy: 349.62
+
     # RViz grasp visualization topic
     marker_topic: '/anygrasp/detection_markers'
     

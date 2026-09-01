@@ -43,6 +43,13 @@ source install/setup.bash
 ros2 service call /anygrasp/detection anygrasp_msgs/srv/GetGrasps "{count: 10}"
 ``` 
 
+to trigger bbox-guided filtered detection, use the following command
+
+```bash
+source install/setup.bash
+ros2 service call /anygrasp/detection/filtered anygrasp_msgs/srv/GetFilteredGrasps "{count: 3, detection_id: 0, class_id: 39, class_name: 'bottle', bbx_center_x: 320, bbx_center_y: 240, bbx_size_w: 120, bbx_size_h: 200, image_width: 640, image_height: 480}"
+```
+
 ### Starting the anygrasp tracking system
 
 Use the following command to start the anygrasp tracking system
@@ -123,12 +130,14 @@ Try running the `grasp_detection/demo.py` and `grasp_tracking/demo.py` to confir
 The nodes expose these services:
 
 - `/anygrasp/detection` using `anygrasp_msgs/srv/GetGrasps`
+- `/anygrasp/detection/filtered` using `anygrasp_msgs/srv/GetFilteredGrasps`
 - `/anygrasp/tracking` using `anygrasp_msgs/srv/GetGraspsTracked`
 
 Usage:
 
 - Each service takes a `count` in the request.
 - Detection returns `geometry_msgs/PoseStamped[]`  
+- Filtered detection additionally accepts selected 2D detection metadata plus bbox coordinates and image dimensions so AnyGrasp can localize grasps to that object region.
 - Tracking returns `int64[] ids` aligned with `geometry_msgs/PoseStamped[]`, and accepts `input_ids` as a list to select specific tracked grasps or `[]` to update the active set.
 - Each stamped pose copies the source pointcloud header, so the frame is explicit for downstream motion planning.
 
