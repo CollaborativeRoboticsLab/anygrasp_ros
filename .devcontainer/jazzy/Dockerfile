@@ -9,6 +9,8 @@ ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV CPATH=${CUDA_HOME}/include
 ENV LIBRARY_PATH=${CUDA_HOME}/lib:${LIBRARY_PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib:${LD_LIBRARY_PATH}
+ENV PYTHONPATH=
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 ENV CXX=c++
 
 RUN apt-get update && \
@@ -34,7 +36,7 @@ RUN apt-get update && \
 ####        Install Pytoch and torchvision
 ############################################################################
 
-RUN python -m pip install --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+RUN python -m pip install --break-system-packages --no-cache-dir torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128
 
 ############################################################################
 ####        Install MinkowskiEngine
@@ -57,7 +59,7 @@ WORKDIR /dependencies
 RUN git clone https://github.com/CollaborativeRoboticsLab/graspnetAPI.git
 
 WORKDIR /dependencies/graspnetAPI
-RUN python -m pip install --no-cache-dir .
+RUN python -m pip install --break-system-packages "numpy<2.0" --no-cache-dir .
 
 ############################################################################
 ####        Install AnyGrasp SDK
@@ -67,7 +69,7 @@ WORKDIR /dependencies
 RUN git clone https://github.com/graspnet/anygrasp_sdk.git
 
 WORKDIR /dependencies/anygrasp_sdk
-RUN python -m pip install "numpy<2.0" --no-cache-dir -r requirements.txt
+RUN python -m pip install --break-system-packages "numpy<2.0" --no-cache-dir -r requirements.txt
 
 ############################################################################
 ####        Install pointnet2
@@ -79,7 +81,7 @@ RUN python -m pip install "numpy<2.0" --no-cache-dir -r requirements.txt
 ## it, leading to ModuleNotFoundError. So  --no-build-isolation is needed.
 
 WORKDIR /dependencies/anygrasp_sdk/pointnet2
-RUN python -m pip install "numpy<2.0" --no-cache-dir --no-build-isolation .
+RUN python -m pip install --break-system-packages "numpy<2.0" --no-cache-dir --no-build-isolation .
 
 ############################################################################
 ####        Rename and move the libraries 
@@ -101,7 +103,7 @@ ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${ANYGRASP_PATH}"
 ############################################################################
 
 ## Set ROS distribution as an environment variable
-ENV ROS_DISTRO=humble
+ENV ROS_DISTRO=jazzy
 ENV DEBIAN_FRONTEND=noninteractive
 
 ## Check and update locale settings
@@ -181,9 +183,6 @@ RUN apt-get update && \
 ARG USERNAME=ubuntu
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
-
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME
 
 RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
