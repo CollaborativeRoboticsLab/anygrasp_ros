@@ -1,0 +1,30 @@
+{
+  "name": "Anygrasp Jazzy base",
+  "context": "../",
+  "dockerFile": "Dockerfile",
+  "remoteUser": "ubuntu",
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "ROS_DOMAIN_ID": "76",
+    "CYCLONEDDS_URI": "file:///home/ubuntu/colcon_ws/src/anygrasp_ros/bridge.xml"
+  },
+  "runArgs": [
+    "--privileged",
+    "--network=bridge",    
+    "-p",
+    "26400-26420:26400-26420/udp",
+    "--mac-address=02:42:de:ad:be:ff",
+    "--gpus",
+    "all"
+  ],
+  "workspaceMount": "source=${localWorkspaceFolder},target=/home/ubuntu/colcon_ws/src/${localWorkspaceFolderBasename},type=bind",
+  "workspaceFolder": "/home/ubuntu/colcon_ws",
+  "mounts": [
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.bash_history,target=/home/ubuntu/.bash_history,type=bind",
+    "source=${localWorkspaceFolder}/license,target=/dependencies/precompiled/license,type=bind",
+    "source=${localWorkspaceFolder}/weights/detection,target=/dependencies/precompiled/weights/detection,type=bind",
+    "source=${localWorkspaceFolder}/weights/tracking,target=/dependencies/precompiled/weights/tracking,type=bind",
+    "source=/dev,target=/dev,type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+  ]
+}

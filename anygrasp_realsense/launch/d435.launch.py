@@ -108,7 +108,11 @@ def declare_configurable_parameters(parameters):
     return [DeclareLaunchArgument(param['name'], default_value=param['default'], description=param['description']) for param in parameters]
 
 def set_configurable_parameters(parameters):
-    return dict([(param['name'], LaunchConfiguration(param['name'])) for param in parameters])
+    return {
+        param['name']: ParameterValue(LaunchConfiguration(param['name']), value_type=str)
+        if param['name'] == 'serial_no' else LaunchConfiguration(param['name'])
+        for param in parameters
+    }
 
 def yaml_to_dict(path_to_yaml):
     with open(path_to_yaml, "r") as f:

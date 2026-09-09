@@ -5,8 +5,12 @@
   "remoteUser": "ubuntu",
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
+<<<<<<< HEAD:.devcontainer/devcontainer.json
     "ROS_DOMAIN_ID": "76",
     "RMW_IMPLEMENTATION": "rmw_cyclonedds_cpp",
+=======
+    // "ROS_DOMAIN_ID": "1",
+>>>>>>> 3f1404bcbec497d21c8775caea91016f6df057bb:.devcontainer/humble/devcontainer.json
     "CYCLONEDDS_URI": "file:///home/ubuntu/colcon_ws/src/anygrasp_ros/bridge.xml"
   },
   "runArgs": [
