@@ -5,7 +5,7 @@
   "remoteUser": "ubuntu",
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
-    "ROS_DOMAIN_ID": "1",
+    // "ROS_DOMAIN_ID": "1",
     "CYCLONEDDS_URI": "file:///home/ubuntu/colcon_ws/src/anygrasp_ros/bridge.xml"
   },
   "runArgs": [
