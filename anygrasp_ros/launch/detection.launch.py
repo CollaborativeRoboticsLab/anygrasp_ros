@@ -10,7 +10,7 @@ import os
 def generate_launch_description() -> LaunchDescription:
     # Get the package directory
     pkg_share = FindPackageShare('anygrasp_ros')
-    config_path = PathJoinSubstitution([pkg_share, 'config', 'config.yaml'])
+    config_path = PathJoinSubstitution([pkg_share, 'config', 'gripper_camera_config.yaml'])
     rviz_config_path = PathJoinSubstitution([pkg_share, 'config', 'anygrasp.rviz'])
 
     use_rviz = LaunchConfiguration('use_rviz')
@@ -62,13 +62,13 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument('use_rviz', default_value='true'),
-            DeclareLaunchArgument('rgb_image_topic', default_value='/camera/color/image_raw'),
-            DeclareLaunchArgument('depth_image_topic', default_value='/camera/depth/image_rect_raw'),
+            DeclareLaunchArgument('rgb_image_topic', default_value='/gripper_camera/color/image_raw'),
+            DeclareLaunchArgument('depth_image_topic', default_value='/gripper_camera/depth/image_rect_raw'),
             DeclareLaunchArgument(
-                'color_camera_info_topic_name', default_value='/camera/color/camera_info'
+                'color_camera_info_topic_name', default_value='/gripper_camera/color/camera_info'
             ),
             DeclareLaunchArgument(
-                'depth_camera_info_topic_name', default_value='/camera/depth/camera_info'
+                'depth_camera_info_topic_name', default_value='/gripper_camera/depth/camera_info'
             ),
             rgbd_node,
             detection_node,

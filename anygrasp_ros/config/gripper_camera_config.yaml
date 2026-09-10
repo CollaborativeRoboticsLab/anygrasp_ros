@@ -20,7 +20,7 @@ anygrasp_detection_node:
 
     # Camera intrinsics for 2D bbox reprojection in filtered grasp queries
     use_color_camera_info_topic: true
-    color_camera_info_topic_name: '/camera/color/camera_info'
+    color_camera_info_topic_name: '/gripper_camera/color/camera_info'
     fx: 927.17
     fy: 927.37
     cx: 651.32
@@ -60,8 +60,8 @@ anygrasp_tracking_node:
 rgbd_to_pointcloud_node:
   ros__parameters:
     # Image and pointcloud topics
-    rgb_image_topic: '/camera/color/image_raw'
-    depth_image_topic: '/camera/depth/image_rect_raw'
+    rgb_image_topic: '/gripper_camera/color/image_raw'
+    depth_image_topic: '/gripper_camera/depth/image_rect_raw'
     pointcloud_topic: '/pointcloud'
     
     # Camera intrinsics configuration
