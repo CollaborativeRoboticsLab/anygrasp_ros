@@ -125,7 +125,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: gripper_camera_link
+    Fixed Frame: world
     Frame Rate: 30
   Name: root
   Tools:

@@ -58,6 +58,7 @@ class AnyGraspTrackingNode(Node):
         self.declare_parameter('checkpoint_path', '')
         self.declare_parameter('filter', 'oneeuro')
         self.declare_parameter('marker_topic', '/anygrasp/tracking_markers')
+        self.declare_parameter('marker_frame_id', '')
         self.declare_parameter('select_x', [-0.18, 0.18])
         self.declare_parameter('select_y', [-0.12, 0.12])
         self.declare_parameter('select_z', [0.35, 0.55])
@@ -67,6 +68,7 @@ class AnyGraspTrackingNode(Node):
         self._lock = threading.Lock()
         self._params = SimpleNamespace()
         self._load_parameters()
+        self._last_pointcloud_frame_id = ''
 
         # Cache latest pointcloud
         self._latest_pointcloud: Optional[PointCloud2] = None
@@ -98,6 +100,7 @@ class AnyGraspTrackingNode(Node):
         self._params.checkpoint_path = str(self.get_parameter('checkpoint_path').value)
         self._params.filter = str(self.get_parameter('filter').value)
         self._params.marker_topic = str(self.get_parameter('marker_topic').value)
+        self._params.marker_frame_id = str(self.get_parameter('marker_frame_id').value).strip()
         self._params.select_x = [float(v) for v in list(self.get_parameter('select_x').value)]
         self._params.select_y = [float(v) for v in list(self.get_parameter('select_y').value)]
         self._params.select_z = [float(v) for v in list(self.get_parameter('select_z').value)]
@@ -127,6 +130,12 @@ class AnyGraspTrackingNode(Node):
         """Store the latest pointcloud."""
         with self._lock:
             self._latest_pointcloud = msg
+            if msg.header.frame_id:
+                self._last_pointcloud_frame_id = msg.header.frame_id
+
+    def _resolve_marker_frame_id(self, frame_id: str) -> str:
+        """Resolve marker frame, defaulting to the depth-camera-derived pointcloud frame."""
+        return self._params.marker_frame_id or frame_id or self._last_pointcloud_frame_id
 
     def _pointcloud2_to_arrays(self, msg: PointCloud2) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
@@ -387,7 +396,7 @@ class AnyGraspTrackingNode(Node):
 
     def _publish_grasp_markers(self, poses: list[Pose], frame_id: str, stamp) -> None:
         """Publish RViz markers for the current tracked grasp set."""
-        marker_frame = frame_id or 'map'
+        marker_frame = self._resolve_marker_frame_id(frame_id)
         marker_stamp = stamp if stamp is not None else self.get_clock().now().to_msg()
         markers = create_grasp_markers(
             poses=poses,

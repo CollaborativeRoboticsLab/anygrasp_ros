@@ -66,6 +66,7 @@ class AnyGraspDetectionNode(Node):
         self.declare_parameter('dense_grasp', False)
         self.declare_parameter('collision_detection', True)
         self.declare_parameter('marker_topic', '/anygrasp/detection_markers')
+        self.declare_parameter('marker_frame_id', '')
         self.declare_parameter('lims', [-0.19, 0.12, 0.02, 0.15, 0.0, 1.0])
         self.declare_parameter('input_pointcloud', '/pointcloud')
         self.declare_parameter('use_color_camera_info_topic', True)
@@ -80,6 +81,7 @@ class AnyGraspDetectionNode(Node):
         self._load_parameters()
         self._detector_api = 'unknown'
         self._color_intrinsics: Optional[SimpleNamespace] = None
+        self._last_pointcloud_frame_id = ''
 
         # Cache latest pointcloud
         self._latest_pointcloud: Optional[PointCloud2] = None
@@ -123,6 +125,7 @@ class AnyGraspDetectionNode(Node):
         self._params.dense_grasp = bool(self.get_parameter('dense_grasp').value)
         self._params.collision_detection = bool(self.get_parameter('collision_detection').value)
         self._params.marker_topic = str(self.get_parameter('marker_topic').value)
+        self._params.marker_frame_id = str(self.get_parameter('marker_frame_id').value).strip()
         self._params.lims = [float(v) for v in list(self.get_parameter('lims').value)]
         self._params.input_pointcloud = str(self.get_parameter('input_pointcloud').value)
         self._params.use_color_camera_info_topic = bool(
@@ -214,6 +217,12 @@ class AnyGraspDetectionNode(Node):
         """Store the latest pointcloud."""
         with self._lock:
             self._latest_pointcloud = msg
+            if msg.header.frame_id:
+                self._last_pointcloud_frame_id = msg.header.frame_id
+
+    def _resolve_marker_frame_id(self, frame_id: str) -> str:
+        """Resolve marker frame, defaulting to the depth-camera-derived pointcloud frame."""
+        return self._params.marker_frame_id or frame_id or self._last_pointcloud_frame_id
 
     def _pointcloud2_to_arrays(self, msg: PointCloud2) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
@@ -625,7 +634,7 @@ class AnyGraspDetectionNode(Node):
 
     def _publish_grasp_markers(self, poses: list[Pose], frame_id: str, stamp) -> None:
         """Publish RViz markers for the current grasp set."""
-        marker_frame = frame_id or 'map'
+        marker_frame = self._resolve_marker_frame_id(frame_id)
         marker_stamp = stamp if stamp is not None else self.get_clock().now().to_msg()
         markers = create_grasp_markers(
             poses=poses,

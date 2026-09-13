@@ -28,6 +28,7 @@ anygrasp_detection_node:
 
     # RViz grasp visualization topic
     marker_topic: '/anygrasp/detection_markers'
+    marker_frame_id: ''
     
     # Workspace limits [x_min, x_max, y_min, y_max, z_min, z_max]
     lims: [-0.19, 0.12, 0.02, 0.15, 0.0, 1.0]
@@ -47,6 +48,7 @@ anygrasp_tracking_node:
 
     # RViz grasp visualization topic
     marker_topic: '/anygrasp/tracking_markers'
+    marker_frame_id: ''
     
     # Initial grasp selection workspace (for initial grasp selection)
     select_x: [-0.18, 0.18]
@@ -72,6 +74,7 @@ rgbd_to_pointcloud_node:
     
     use_depth_camera_info_topic: true
     depth_camera_info_topic_name: '/camera/depth/camera_info'
+    pointcloud_frame_id: ''
     
     # Fallback intrinsics (used if camera info topics are not available)
     # These are Intel RealSense D435 defaults

@@ -102,7 +102,7 @@ The node maintains a cache of the latest point cloud for service requests.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `use_color_camera_info_topic` | bool | true | Use the color `CameraInfo` topic for grasp reprojection into image space |
-| `color_camera_info_topic_name` | string | `/camera/color/camera_info` | Color `CameraInfo` topic used for bbox reprojection |
+| `color_camera_info_topic_name` | string | `/gripper_camera/color/camera_info` | Color `CameraInfo` topic used for bbox reprojection |
 | `fx` | float | 927.17 | Fallback focal length x when no `CameraInfo` has been received |
 | `fy` | float | 927.37 | Fallback focal length y when no `CameraInfo` has been received |
 | `cx` | float | 651.32 | Fallback principal point x when no `CameraInfo` has been received |

@@ -46,6 +46,7 @@ class RGBDToPointCloudNode(Node):
         self.declare_parameter('color_camera_info_topic_name', '/camera/color/camera_info')
         self.declare_parameter('use_depth_camera_info_topic', True)
         self.declare_parameter('depth_camera_info_topic_name', '/camera/depth/camera_info')
+        self.declare_parameter('pointcloud_frame_id', '')
 
         self.declare_parameter('fx', 927.17)
         self.declare_parameter('fy', 927.37)
@@ -63,11 +64,14 @@ class RGBDToPointCloudNode(Node):
         self._depth_intrinsics: Optional[SimpleNamespace] = None
         self._depth_to_color_rotation: Optional[np.ndarray] = None
         self._depth_to_color_translation: Optional[np.ndarray] = None
+        self._depth_to_output_rotation: Optional[np.ndarray] = None
+        self._depth_to_output_translation: Optional[np.ndarray] = None
         
         # Frame names (extracted from image headers on first message)
         self._rgb_frame_id: Optional[str] = None
         self._depth_frame_id: Optional[str] = None
         self._tf_transform_queried = False
+        self._output_transform_queried = False
 
         self._load_parameters()
 
@@ -114,6 +118,7 @@ class RGBDToPointCloudNode(Node):
         self._params.depth_camera_info_topic_name = str(
             self.get_parameter('depth_camera_info_topic_name').value
         )
+        self._params.pointcloud_frame_id = str(self.get_parameter('pointcloud_frame_id').value).strip()
 
         self._params.fx = float(self.get_parameter('fx').value)
         self._params.fy = float(self.get_parameter('fy').value)
@@ -159,71 +164,90 @@ class RGBDToPointCloudNode(Node):
         with self._lock:
             self._depth_intrinsics = intr
 
-    def _query_tf_transforms(self, depth_frame: str, color_frame: str) -> None:
-        """Query TF tree for depth-to-color transform and cache rotation/translation.
-        
-        Args:
-            depth_frame: Source frame (e.g., 'camera_depth_optical_frame')
-            color_frame: Target frame (e.g., 'camera_color_optical_frame')
-        """
+    def _quaternion_to_rotation_matrix(self, quat) -> np.ndarray:
+        """Convert a geometry_msgs quaternion into a 3x3 rotation matrix."""
+        qx, qy, qz, qw = quat.x, quat.y, quat.z, quat.w
+        return np.array([
+            [1 - 2 * (qy**2 + qz**2), 2 * (qx * qy - qw * qz), 2 * (qx * qz + qw * qy)],
+            [2 * (qx * qy + qw * qz), 1 - 2 * (qx**2 + qz**2), 2 * (qy * qz - qw * qx)],
+            [2 * (qx * qz - qw * qy), 2 * (qy * qz + qw * qx), 1 - 2 * (qx**2 + qy**2)],
+        ])
+
+    def _lookup_transform(
+        self,
+        target_frame: str,
+        source_frame: str,
+        max_wait: float = 10.0,
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Query TF tree for a source-to-target transform."""
         import time
-        max_wait = 10.0
+
         start_time = time.time()
         
         while (time.time() - start_time) < max_wait:
             try:
                 transform = self._tf_buffer.lookup_transform(
-                    color_frame,
-                    depth_frame,
+                    target_frame,
+                    source_frame,
                     rclpy.time.Time()
                 )
-                
-                # Extract rotation (quaternion → rotation matrix)
-                quat = transform.transform.rotation
-                qx, qy, qz, qw = quat.x, quat.y, quat.z, quat.w
-                
-                rotation = np.array([
-                    [1 - 2*(qy**2 + qz**2), 2*(qx*qy - qw*qz), 2*(qx*qz + qw*qy)],
-                    [2*(qx*qy + qw*qz), 1 - 2*(qx**2 + qz**2), 2*(qy*qz - qw*qx)],
-                    [2*(qx*qz - qw*qy), 2*(qy*qz + qw*qx), 1 - 2*(qx**2 + qy**2)]
-                ])
-                
+
+                rotation = self._quaternion_to_rotation_matrix(transform.transform.rotation)
                 translation = np.array([
                     transform.transform.translation.x,
                     transform.transform.translation.y,
                     transform.transform.translation.z
                 ])
-                
-                with self._lock:
-                    self._depth_to_color_rotation = rotation
-                    self._depth_to_color_translation = translation
-                
-                self.get_logger().info(
-                    f'TF transform found: {depth_frame} → {color_frame}'
-                )
-                self.get_logger().info(
-                    f'Rotation matrix:\n{rotation}'
-                )
-                self.get_logger().info(
-                    f'Translation vector: {translation}'
-                )
-                return
+
+                self.get_logger().info(f'TF transform found: {source_frame} → {target_frame}')
+                return rotation, translation
             
             except Exception as exc:  # noqa: BLE001
                 elapsed = time.time() - start_time
                 self.get_logger().debug(
-                    f'Waiting for TF transform... ({elapsed:.1f}s): {exc}'
+                    f'Waiting for TF transform {source_frame} → {target_frame}... ({elapsed:.1f}s): {exc}'
                 )
                 time.sleep(0.1)
-        
-        self.get_logger().warn(
-            f'TF transform not found within {max_wait:.1f}s. Point cloud will use depth frame only.'
-        )
+
+        return None, None
+
+    def _query_tf_transforms(self, depth_frame: str, color_frame: str) -> None:
+        """Query TF tree for depth-to-color transform and cache rotation/translation."""
+        rotation, translation = self._lookup_transform(color_frame, depth_frame)
+        if rotation is None or translation is None:
+            self.get_logger().warn(
+                f'TF transform not found within 10.0s for {depth_frame} → {color_frame}. '
+                'Point cloud will use depth frame only.'
+            )
+            return
+
+        with self._lock:
+            self._depth_to_color_rotation = rotation
+            self._depth_to_color_translation = translation
+
+    def _query_output_transform(self, depth_frame: str, output_frame: str) -> None:
+        """Query TF tree for depth-to-output transform and cache rotation/translation."""
+        rotation, translation = self._lookup_transform(output_frame, depth_frame)
+        if rotation is None or translation is None:
+            self.get_logger().warn(
+                f'TF transform not found within 10.0s for {depth_frame} → {output_frame}. '
+                'Point cloud will remain in the depth frame.'
+            )
+            return
+
+        with self._lock:
+            self._depth_to_output_rotation = rotation
+            self._depth_to_output_translation = translation
 
     def _get_depth_to_color_transform(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """Return (rotation_matrix, translation_vector) for depth-to-color transformation."""
         with self._lock:
             return self._depth_to_color_rotation, self._depth_to_color_translation
+
+    def _get_depth_to_output_transform(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Return (rotation_matrix, translation_vector) for depth-to-output transformation."""
+        with self._lock:
+            return self._depth_to_output_rotation, self._depth_to_output_translation
 
     def _get_point_cloud_intrinsics(self) -> Tuple[float, float, float, float]:
         """Return (fx, fy, cx, cy) for depth to 3D projection."""
@@ -243,15 +267,26 @@ class RGBDToPointCloudNode(Node):
 
     def _on_rgbd_sync(self, rgb_msg: Image, depth_msg: Image) -> None:
         """Process synchronized RGB and depth images."""
-        # On first message, extract frame IDs and query TF if alignment is enabled
-        if not self._tf_transform_queried and self._params.align_depth_to_color:
+        if self._rgb_frame_id is None:
             self._rgb_frame_id = rgb_msg.header.frame_id
+        if self._depth_frame_id is None:
             self._depth_frame_id = depth_msg.header.frame_id
+
+        # On first message, query TF if alignment is enabled
+        if not self._tf_transform_queried and self._params.align_depth_to_color:
             self.get_logger().info(
                 f'Detected frames: RGB={self._rgb_frame_id}, Depth={self._depth_frame_id}'
             )
             self._query_tf_transforms(self._depth_frame_id, self._rgb_frame_id)
             self._tf_transform_queried = True
+        if (
+            not self._output_transform_queried
+            and self._params.pointcloud_frame_id
+            and self._depth_frame_id is not None
+            and self._params.pointcloud_frame_id != self._depth_frame_id
+        ):
+            self._query_output_transform(self._depth_frame_id, self._params.pointcloud_frame_id)
+            self._output_transform_queried = True
         
         try:
             rgb = self._bridge.imgmsg_to_cv2(rgb_msg, desired_encoding='bgr8')
@@ -302,15 +337,23 @@ class RGBDToPointCloudNode(Node):
         if not np.any(valid_mask):
             return PointCloud2()
 
-        points = np.stack([x[valid_mask], y[valid_mask], z[valid_mask]], axis=-1).astype(np.float32)
+        points_depth_frame = np.stack([x[valid_mask], y[valid_mask], z[valid_mask]], axis=-1).astype(np.float32)
+        points_for_projection = points_depth_frame
+        points_for_output = points_depth_frame
 
-        # Transform points to color frame if TF transform is available
-        frame_id = 'camera_depth_optical_frame'
+        # Publish in the configured frame, otherwise keep the native depth-camera frame.
+        frame_id = self._params.pointcloud_frame_id or self._depth_frame_id or ''
         if self._params.align_depth_to_color:
             rot, trans = self._get_depth_to_color_transform()
             if rot is not None and trans is not None:
-                points = (rot @ points.T).T + trans
-                frame_id = self._rgb_frame_id or 'camera_color_optical_frame'
+                points_for_projection = (rot @ points_depth_frame.T).T + trans
+
+        if self._params.pointcloud_frame_id:
+            rot_out, trans_out = self._get_depth_to_output_transform()
+            if rot_out is not None and trans_out is not None:
+                points_for_output = (rot_out @ points_depth_frame.T).T + trans_out
+            else:
+                frame_id = self._depth_frame_id or ''
 
         # Choose color intrinsics (prefer camera info if available)
         if self._color_intrinsics is not None:
@@ -320,11 +363,12 @@ class RGBDToPointCloudNode(Node):
             fx_c, fy_c, cx_c, cy_c = fx, fy, cx, cy
 
         # Project points into color image to pick colors
-        valid_project = points[:, 2] > 0.001
-        points = points[valid_project]
+        valid_project = points_for_projection[:, 2] > 0.001
+        points = points_for_output[valid_project]
+        projected_points = points_for_projection[valid_project]
 
-        u = np.round(points[:, 0] * fx_c / points[:, 2] + cx_c).astype(np.int32)
-        v = np.round(points[:, 1] * fy_c / points[:, 2] + cy_c).astype(np.int32)
+        u = np.round(projected_points[:, 0] * fx_c / projected_points[:, 2] + cx_c).astype(np.int32)
+        v = np.round(projected_points[:, 1] * fy_c / projected_points[:, 2] + cy_c).astype(np.int32)
 
         uv_mask = (u >= 0) & (u < w) & (v >= 0) & (v < h)
         points = points[uv_mask]

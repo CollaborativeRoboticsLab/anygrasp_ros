@@ -108,8 +108,8 @@ The node queries the ROS 2 TF transform tree to find the rigid body transformati
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `rgb_image_topic` | `sensor_msgs/Image` | RGB image from camera (default: `/camera/color/image_raw`) |
-| `depth_image_topic` | `sensor_msgs/Image` | Depth image from camera (default: `/camera/depth/image_rect_raw`) |
+| `rgb_image_topic` | `sensor_msgs/Image` | RGB image from camera (default: `/gripper_camera/color/image_raw`) |
+| `depth_image_topic` | `sensor_msgs/Image` | Depth image from camera (default: `/gripper_camera/depth/image_rect_raw`) |
 | `color_camera_info_topic_name` | `sensor_msgs/CameraInfo` | Color camera intrinsics (optional, if `use_color_camera_info_topic=true`) |
 | `depth_camera_info_topic_name` | `sensor_msgs/CameraInfo` | Depth camera intrinsics (optional, if `use_depth_camera_info_topic=true`) |
 
