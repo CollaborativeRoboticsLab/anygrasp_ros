@@ -67,6 +67,7 @@ class AnyGraspDetectionNode(Node):
         self.declare_parameter('collision_detection', True)
         self.declare_parameter('marker_topic', '/anygrasp/detection_markers')
         self.declare_parameter('marker_frame_id', '')
+        self.declare_parameter('ignore_workspace_limits', False)
         self.declare_parameter('lims', [-0.19, 0.12, 0.02, 0.15, 0.0, 1.0])
         self.declare_parameter('input_pointcloud', '/pointcloud')
         self.declare_parameter('use_color_camera_info_topic', True)
@@ -118,7 +119,7 @@ class AnyGraspDetectionNode(Node):
         max_gripper_width = float(self.get_parameter('max_gripper_width').value)
 
         self._params.checkpoint_path = checkpoint_path
-        self._params.max_gripper_width = max(0.0, min(0.1, max_gripper_width))
+        self._params.max_gripper_width = max(0.0, max_gripper_width)
         self._params.gripper_height = float(self.get_parameter('gripper_height').value)
         self._params.top_down_grasp = bool(self.get_parameter('top_down_grasp').value)
         self._params.apply_object_mask = bool(self.get_parameter('apply_object_mask').value)
@@ -126,6 +127,9 @@ class AnyGraspDetectionNode(Node):
         self._params.collision_detection = bool(self.get_parameter('collision_detection').value)
         self._params.marker_topic = str(self.get_parameter('marker_topic').value)
         self._params.marker_frame_id = str(self.get_parameter('marker_frame_id').value).strip()
+        self._params.ignore_workspace_limits = bool(
+            self.get_parameter('ignore_workspace_limits').value
+        )
         self._params.lims = [float(v) for v in list(self.get_parameter('lims').value)]
         self._params.input_pointcloud = str(self.get_parameter('input_pointcloud').value)
         self._params.use_color_camera_info_topic = bool(
@@ -343,6 +347,16 @@ class AnyGraspDetectionNode(Node):
         lims: list[float],
     ):
         """Run AnyGrasp detection on the provided point subset."""
+        if bool(self._params.ignore_workspace_limits):
+            lims = [
+                float(np.min(points[:, 0])),
+                float(np.max(points[:, 0])),
+                float(np.min(points[:, 1])),
+                float(np.max(points[:, 1])),
+                float(np.min(points[:, 2])),
+                float(np.max(points[:, 2])),
+            ]
+
         if self._detector_api == 'legacy_anygrasp':
             gg, _cloud = self._anygrasp.get_grasp(
                 points,
@@ -354,14 +368,17 @@ class AnyGraspDetectionNode(Node):
             )
             return gg
 
-        workspace_mask = (
-            (points[:, 0] >= lims[0])
-            & (points[:, 0] <= lims[1])
-            & (points[:, 1] >= lims[2])
-            & (points[:, 1] <= lims[3])
-            & (points[:, 2] >= lims[4])
-            & (points[:, 2] <= lims[5])
-        )
+        if bool(self._params.ignore_workspace_limits):
+            workspace_mask = np.ones(points.shape[0], dtype=bool)
+        else:
+            workspace_mask = (
+                (points[:, 0] >= lims[0])
+                & (points[:, 0] <= lims[1])
+                & (points[:, 1] >= lims[2])
+                & (points[:, 1] <= lims[3])
+                & (points[:, 2] >= lims[4])
+                & (points[:, 2] <= lims[5])
+            )
         optional_params = {
             'dense_grasp': bool(self._params.dense_grasp),
             'collision_detection': bool(self._params.collision_detection),
